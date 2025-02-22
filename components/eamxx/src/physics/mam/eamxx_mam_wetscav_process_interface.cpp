@@ -252,47 +252,9 @@ void MAMWetscav::initialize_impl(const RunType run_type) {
   dry_atm_.z_iface   = buffer_.z_iface;
   dry_atm_.w_updraft = buffer_.w_updraft;
 
-  // ---- set wet/dry aerosol-related gas state data
-  for(int g = 0; g < mam_coupling::num_aero_gases(); ++g) {
-    const char *mmr_field_name = mam_coupling::gas_mmr_field_name(g);
-    wet_aero_.gas_mmr[g] = get_field_out(mmr_field_name).get_view<Real **>();
-    dry_aero_.gas_mmr[g] = buffer_.dry_gas_mmr[g];
-  }
-
-  // set wet/dry aerosol state data (interstitial aerosols only)
-  for(int imode = 0; imode < mam_coupling::num_aero_modes(); ++imode) {
-    const char *int_nmr_field_name =
-        mam_coupling::int_aero_nmr_field_name(imode);
-    wet_aero_.int_aero_nmr[imode] =
-        get_field_out(int_nmr_field_name).get_view<Real **>();
-    dry_aero_.int_aero_nmr[imode] = buffer_.dry_int_aero_nmr[imode];
-
-    const char *cld_nmr_field_name =
-        mam_coupling::cld_aero_nmr_field_name(imode);
-    wet_aero_.cld_aero_nmr[imode] =
-        get_field_out(cld_nmr_field_name).get_view<Real **>();
-    dry_aero_.cld_aero_nmr[imode] = wet_aero_.cld_aero_nmr[imode];
-
-    for(int ispec = 0; ispec < mam_coupling::num_aero_species(); ++ispec) {
-      const char *int_mmr_field_name =
-          mam_coupling::int_aero_mmr_field_name(imode, ispec);
-      if(strlen(int_mmr_field_name) > 0) {
-        wet_aero_.int_aero_mmr[imode][ispec] =
-            get_field_out(int_mmr_field_name).get_view<Real **>();
-        dry_aero_.int_aero_mmr[imode][ispec] =
-            buffer_.dry_int_aero_mmr[imode][ispec];
-      }
-
-      const char *cld_mmr_field_name =
-          mam_coupling::cld_aero_mmr_field_name(imode, ispec);
-      if(strlen(cld_mmr_field_name) > 0) {
-        wet_aero_.cld_aero_mmr[imode][ispec] =
-            get_field_out(cld_mmr_field_name).get_view<Real **>();
-        dry_aero_.cld_aero_mmr[imode][ispec] =
-            buffer_.dry_cld_aero_mmr[imode][ispec];
-      }
-    }
-  }
+  // interstitial and cloudborne aerosol tracers of interest: mass (q) and
+  // number (n) mixing ratios
+  populate_wet_and_dry_aero();
 
   //---------------------------------------------------------------------------------
   // Allocate memory
