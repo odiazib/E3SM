@@ -297,6 +297,7 @@ void MAMOptics::initialize_impl(const RunType run_type) {
 void MAMOptics::run_impl(const double dt) {
   constexpr Real zero = 0.0;
   constexpr Real one  = 1.0;
+  InitializeBuffer(buffer_);
 
   const auto policy =
       ekat::ExeSpaceUtils<KT::ExeSpace>::get_default_team_policy(ncol_, nlev_);

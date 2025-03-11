@@ -144,7 +144,7 @@ void MAMConstituentFluxes::run_impl(const double dt) {
   // to do this conversion. We need to do this conversion as our function
   // are built following HAERO data structures.
   // -------------------------------------------------------------------
-
+  InitializeBuffer(buffer_);
   // Compute vertical layer heights and updraft velocity. We need these to fully
   // populate dry_atm_, so that we can form a HAERO atmosphere object. HAERO
   // atmosphere object is used to for state%q like array.

@@ -354,6 +354,7 @@ void MAMSrfOnlineEmiss::initialize_impl(const RunType run_type) {
 //  RUN_IMPL
 // ================================================================
 void MAMSrfOnlineEmiss::run_impl(const double dt) {
+  InitializeBuffer(buffer_);
   const auto scan_policy = ekat::ExeSpaceUtils<
       KT::ExeSpace>::get_thread_range_parallel_scan_team_policy(ncol_, nlev_);
 

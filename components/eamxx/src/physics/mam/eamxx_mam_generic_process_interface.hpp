@@ -49,6 +49,8 @@ class MAMGenericInterface : public scream::AtmosphereProcess {
   void add_fields_dry_atm();
   void add_tracers_wet_atm();
 
+  void InitializeBuffer(mam_coupling::Buffer &buffer);
+
   // Atmosphere processes often have a pre-processing step that constructs
   // required variables from the set of fields stored in the field manager.
   // This functor implements this step, which is called during run_impl.

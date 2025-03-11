@@ -502,6 +502,7 @@ void MAMMicrophysics::initialize_impl(const RunType run_type) {
 //  RUN_IMPL
 // ================================================================
 void MAMMicrophysics::run_impl(const double dt) {
+  InitializeBuffer(buffer_);
   const int ncol = ncol_;
   const int nlev = nlev_;
   const auto policy =

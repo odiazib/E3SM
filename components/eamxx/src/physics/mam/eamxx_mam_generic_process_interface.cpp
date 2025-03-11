@@ -284,6 +284,7 @@ void MAMGenericInterface::populate_wet_atm(
   wet_atm.qi = get_field_in("qi").get_view<const Real **>();
   wet_atm.ni = get_field_in("ni").get_view<const Real **>();
 }
+
 void MAMGenericInterface::populate_dry_atm(mam_coupling::DryAtmosphere &dry_atm,
                                            mam_coupling::Buffer &buffer) {
   // store rest fo the atm fields in dry_atm_in
@@ -319,6 +320,54 @@ void MAMGenericInterface::populate_dry_atm(mam_coupling::DryAtmosphere &dry_atm,
   // computed updraft velocity
   dry_atm.w_updraft = buffer.w_updraft;
 }
+void MAMGenericInterface::InitializeBuffer(mam_coupling::Buffer &buffer) {
+
+    // store fields converted to dry mmr from wet mmr in dry_atm
+  Kokkos::deep_copy(buffer.qv_dry, 0.0);
+  Kokkos::deep_copy(buffer.qc_dry, 0.0);
+  Kokkos::deep_copy(buffer.nc_dry, 0.0);
+  Kokkos::deep_copy(buffer.qi_dry, 0.0);
+  Kokkos::deep_copy(buffer.ni_dry, 0.0);
+
+  // geometric thickness of layers (m)
+  Kokkos::deep_copy(buffer.dz, 0.0);
+
+  // geopotential height above surface at interface levels (m)
+  Kokkos::deep_copy(buffer.z_iface, 0.0);
+
+  // geopotential height above surface at mid levels (m)
+  Kokkos::deep_copy(buffer.z_mid, 0.0);
+
+   // computed updraft velocity
+  Kokkos::deep_copy(buffer.w_updraft, 0.0);
+
+  for(int m = 0; m < mam_coupling::num_aero_modes(); ++m) {
+    // interstitial aerosol tracers of interest: number (n) mixing ratios
+    Kokkos::deep_copy(buffer.dry_int_aero_nmr[m], 0.0);
+    Kokkos::deep_copy(buffer.dry_cld_aero_nmr[m], 0.0);
+
+    for(int a = 0; a < mam_coupling::num_aero_species(); ++a) {
+      // (interstitial) aerosol tracers of interest: mass (q) mixing ratios
+      const std::string int_mmr_field_name =
+          mam_coupling::int_aero_mmr_field_name(m, a);
+
+      if(not int_mmr_field_name.empty()) {
+        Kokkos::deep_copy(buffer.dry_int_aero_mmr[m][a], 0.0);
+        Kokkos::deep_copy(buffer.dry_cld_aero_mmr[m][a], 0.0);
+      }
+    }
+  }
+
+  for(int g = 0; g < mam_coupling::num_aero_gases(); ++g) {
+    Kokkos::deep_copy(buffer.dry_gas_mmr[g], 0.0);
+  }
+
+  for(int i = 0; i < buffer.num_2d_scratch; ++i) {
+    Kokkos::deep_copy(buffer.scratch[i], 0.0);
+  }
+
+}
+
 
 void MAMGenericInterface::add_tracers_wet_atm() {
   // Define the different field layouts that will be used for this process

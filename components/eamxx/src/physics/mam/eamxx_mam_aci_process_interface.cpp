@@ -442,6 +442,7 @@ void MAMAci::run_impl(const double dt) {
 
   // preprocess input -- needs a scan for the calculation of local derivied
   // quantities
+  InitializeBuffer(buffer_);
   Kokkos::parallel_for("preprocess", scan_policy, preprocess_);
   Kokkos::fence();
 
