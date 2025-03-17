@@ -307,7 +307,7 @@ struct Buffer {
   // number of "scratch" fields that hold process-specific data
   // (e.g. gas-phase chemistry fields that are only needed by aerosol
   //  microphysics)
-  static constexpr int max_num_2d_scratch = 50;
+  static constexpr int max_num_2d_scratch = 201;
 
   // number of local fields stored at column midpoints
   static constexpr int min_num_2d_mid =
@@ -373,7 +373,7 @@ inline size_t buffer_size(const int ncol, const int nlev) {
 }
 
 inline size_t buffer_size(const int ncol, const int nlev,
-                          const int num_2d_scratch, const int work_len) {
+                          const int num_2d_scratch, const int work_len=0) {
   const int num_2d_mid = Buffer::min_num_2d_mid + num_2d_scratch;
   return sizeof(Real) * (num_2d_mid* ncol * nlev + ncol * work_len +
                          Buffer::num_2d_iface * ncol * (nlev + 1));
