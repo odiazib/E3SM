@@ -365,15 +365,8 @@ struct Buffer {
 
 // ON HOST, returns the number of bytes of device memory needed by the above
 // Buffer type given the number of columns and vertical levels
-inline size_t buffer_size(const int ncol, const int nlev) {
-  //FIXME: max_num_2d_scratch
-  const int num_2d_mid = Buffer::min_num_2d_mid + Buffer::max_num_2d_scratch;
-  return sizeof(Real) * (num_2d_mid* ncol * nlev +
-                         Buffer::num_2d_iface * ncol * (nlev + 1));
-}
-
 inline size_t buffer_size(const int ncol, const int nlev,
-                          const int num_2d_scratch, const int work_len=0) {
+                          const int num_2d_scratch, const int work_len) {
   const int num_2d_mid = Buffer::min_num_2d_mid + num_2d_scratch;
   return sizeof(Real) * (num_2d_mid* ncol * nlev + ncol * work_len +
                          Buffer::num_2d_iface * ncol * (nlev + 1));
