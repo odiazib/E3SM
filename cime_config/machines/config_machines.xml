@@ -3667,6 +3667,7 @@
         <arg name="gpu_bind">--gpu-bind $ENV{GPU_BIND}</arg>
         <arg name="mem_bind">--mem-bind $ENV{MEM_BIND}</arg>
         <arg name="rlimits">$ENV{RLIMITS}</arg>
+        <arg name="gpu_maps">$ENV{GPU_TILE_COMPACT} tau_exec -T level_zero -l0 </arg>
       </arguments>
     </mpirun>
     <module_system type="module" allow_error="true">
