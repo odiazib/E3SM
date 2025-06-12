@@ -12,6 +12,9 @@
 
 namespace scream {
 
+class DataInterpolation;
+
+
 // The process responsible for handling MAM4 aerosol microphysics. The AD
 // stores exactly ONE instance of this class in its list of subcomponents.
 class MAMMicrophysics final : public MAMGenericInterface {
@@ -159,6 +162,8 @@ class MAMMicrophysics final : public MAMGenericInterface {
   int get_len_temporary_views();
   void init_temporary_views();
   int len_temporary_views_{0};
+
+  std::shared_ptr<DataInterpolation>    m_data_interpolation;
 
 };  // MAMMicrophysics
 

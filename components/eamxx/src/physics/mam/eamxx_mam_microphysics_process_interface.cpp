@@ -5,6 +5,7 @@
 #include "physics/rrtmgp/shr_orb_mod_c2f.hpp"
 #include "readfiles/find_season_index_utils.hpp"
 #include "readfiles/photo_table_utils.cpp"
+#include "share/util/eamxx_data_interpolation.hpp"
 
 namespace scream {
 
@@ -345,6 +346,11 @@ void MAMMicrophysics::set_grids(
     mam_coupling::find_season_index_reader(season_wes_file, clat,
                                            index_season_lai_);
   }
+
+  std::string var_name="so2";
+  for(const auto &field_name : elevated_emis_var_names_[var_name]) {
+      add_field<Required>(field_name, scalar3d_mid, nondim, grid_name);
+  }
 }  // set_grids
 
 // ================================================================
@@ -428,6 +434,20 @@ void MAMMicrophysics::init_temporary_views() {
 //  INITIALIZE_IMPL
 // ================================================================
 void MAMMicrophysics::initialize_impl(const RunType run_type) {
+
+
+
+  std::vector<Field> elevated_fields;
+
+  std::string var_name="so2";
+  for(const auto &field_name : elevated_emis_var_names_[var_name]) {
+      elevated_fields.push_back(get_field_out(field_name));
+  }
+  util::TimeStamp ref_ts (1,1,1,0,0,0); // Beg of any year, since we use yearly periodic timeline
+  m_data_interpolation = std::make_shared<DataInterpolation>(grid_,elevated_fields);
+  m_data_interpolation->setup_time_database ({elevated_emis_file_name_[var_name]},util::TimeLine::YearlyPeriodic, ref_ts);
+
+
   // Determine orbital year. If orbital_year is negative, use current year
   // from timestamp for orbital year; if positive, use provided orbital year
   // for duration of simulation.
@@ -460,7 +480,7 @@ void MAMMicrophysics::initialize_impl(const RunType run_type) {
   // ---------------------------------------------------------------
   populate_wet_atm(wet_atm_);
   populate_dry_atm(dry_atm_, buffer_);
-  
+
   // FIXME: we are using cldfrac_tot in other mam4xx process.
   dry_atm_.cldfrac = get_field_in("cldfrac_liq").get_view<const Real **>();
   // FIXME: phis is not populated by populate_wet_and_dry_atm.
@@ -946,7 +966,7 @@ void MAMMicrophysics::run_impl(const double dt) {
   // Transpose extfrc_ from internal layout [ncol][nlev][extcnt]
   // to output layout [ncol][extcnt][nlev]
   // This aligns with expected field storage in the EAMxx infrastructure.
-  Kokkos::parallel_for("transpose_extfrc", 
+  Kokkos::parallel_for("transpose_extfrc",
     Kokkos::MDRangePolicy<Kokkos::Rank<3>>({0,0,0}, {ncol, extcnt, nlev}),
     KOKKOS_LAMBDA(const int i, const int j, const int k) {
       const int pcnst_idx = extfrc_pcnst_index[j];
