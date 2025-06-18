@@ -222,7 +222,7 @@ void MAMMicrophysics::set_grids(
     linoz_data_.init(num_cols_io_linoz, num_levs_io_linoz, nvars);
     linoz_data_.allocate_temporary_views();
   }  // LINOZ reader
-
+#if 1
   {
     oxid_file_name_ = m_params.get<std::string>("mam4_oxid_file_name");
     const std::string oxid_map_file =
@@ -252,7 +252,7 @@ void MAMMicrophysics::set_grids(
       cnst_offline_[ivar] = view_2d("cnst_offline_", ncol_, nlev_);
     }
   }  // oxid file reader
-
+#endif
   {
     const std::string extfrc_map_file =
         m_params.get<std::string>("aero_microphys_remap_file", "");
@@ -261,7 +261,8 @@ void MAMMicrophysics::set_grids(
     // ','pom_a4          ','bc_a4           ', 'num_a1          ','num_a2
     // ','num_a4          ','SOAG            ' }
     // This order corresponds to files in namelist e3smv2
-    extfrc_lst_ = {"so2",    "so4_a1", "so4_a2", "pom_a4", "bc_a4",
+    // "so2",
+    extfrc_lst_ = {    "so4_a1", "so4_a2", "pom_a4", "bc_a4",
                    "num_a1", "num_a2", "num_a4", "soag"};
 
     for(const auto &var_name : extfrc_lst_) {
@@ -347,10 +348,12 @@ void MAMMicrophysics::set_grids(
                                            index_season_lai_);
   }
 
-  std::string var_name="so2";
-  for(const auto &field_name : elevated_emis_var_names_[var_name]) {
-      add_field<Required>(field_name, scalar3d_mid, nondim, grid_name);
+  // std::string var_name="so2";
+  const std::vector<std::string> var_names_oxi{"O3", "OH", "NO3", "HO2"};
+  for(const auto &field_name : var_names_oxi) {
+      add_field<Computed>(field_name, scalar3d_mid, nondim, grid_name);
   }
+
 }  // set_grids
 
 // ================================================================
@@ -435,18 +438,45 @@ void MAMMicrophysics::init_temporary_views() {
 // ================================================================
 void MAMMicrophysics::initialize_impl(const RunType run_type) {
 
-
-
   std::vector<Field> elevated_fields;
 
-  std::string var_name="so2";
-  for(const auto &field_name : elevated_emis_var_names_[var_name]) {
+  oxid_file_name_ = m_params.get<std::string>("mam4_oxid_file_name");
+  const std::string oxid_map_file =
+        m_params.get<std::string>("aero_microphys_remap_file", "");
+    // NOTE: order matches mam4xx:
+  const std::vector<std::string> var_names_oxi{"O3", "OH", "NO3", "HO2"};
+
+  // std::string var_name="so2";
+  // std::string item_name = "mam4_" + var_name + "_elevated_emiss_file_name";
+  // const auto file_name_so2  = m_params.get<std::string>(item_name);
+
+  for(const auto &field_name : var_names_oxi) {
       elevated_fields.push_back(get_field_out(field_name));
   }
+
+  auto pmid = get_field_in("p_mid");
+  Field pint(FieldIdentifier("p_int",grid_->get_vertical_layout(false),ekat::units::Pa,grid_->name()));
+  pint.get_header().get_alloc_properties().request_allocation(1);
+  pint.allocate_view();
+
   util::TimeStamp ref_ts (1,1,1,0,0,0); // Beg of any year, since we use yearly periodic timeline
   m_data_interpolation = std::make_shared<DataInterpolation>(grid_,elevated_fields);
-  m_data_interpolation->setup_time_database ({elevated_emis_file_name_[var_name]},util::TimeLine::YearlyPeriodic, ref_ts);
 
+  m_data_interpolation->setup_time_database ({oxid_file_name_},util::TimeLine::YearlyPeriodic, ref_ts);
+
+  const std::string extfrc_map_file =
+        m_params.get<std::string>("aero_microphys_remap_file", "");
+  DataInterpolation::RemapData remap_data;
+  remap_data.hremap_file = extfrc_map_file=="none" ? "" : extfrc_map_file;
+  remap_data.vr_type = DataInterpolation::MAM4xx;
+  remap_data.pname = "PS";
+  remap_data.pmid = pmid;
+  remap_data.pint = pint;
+#if 1
+  m_data_interpolation->setup_remappers (remap_data);
+  m_data_interpolation->init_data_interval (start_of_step_ts());
+
+#endif
 
   // Determine orbital year. If orbital_year is negative, use current year
   // from timestamp for orbital year; if positive, use provided orbital year
@@ -573,6 +603,8 @@ void MAMMicrophysics::initialize_impl(const RunType run_type) {
 //  RUN_IMPL
 // ================================================================
 void MAMMicrophysics::run_impl(const double dt) {
+  // m_data_interpolation->run(end_of_step_ts());
+#if 0
   const int ncol = ncol_;
   const int nlev = nlev_;
   const auto policy =
@@ -979,6 +1011,7 @@ void MAMMicrophysics::run_impl(const double dt) {
   // postprocess output
   post_process(wet_aero_, dry_aero_, dry_atm_);
   Kokkos::fence();
+#endif
 }  // MAMMicrophysics::run_impl
 
 }  // namespace scream

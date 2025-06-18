@@ -112,6 +112,9 @@ void DataInterpolation::run (const util::TimeStamp& ts)
         p_v(icol,k) = ps_v(icol) * hybm(k)  + P0 * hyam(k);
       });
     });
+  } else if (m_vr_type==MAM4xx)
+  {
+   printf("Using mam4xx vertical interpolation \n");
   }
 
   m_vert_remapper->remap_fwd();
@@ -219,14 +222,18 @@ setup_time_database (const strvec_t& input_files,
         " - file   : " + input_files.back() + "\n");
 
     scorpio::register_file(fname,scorpio::Read);
-
     if (not scorpio::has_time_dim(fname)) {
+      printf("now I am here\n");
       EKAT_REQUIRE_MSG (scorpio::has_dim(fname,"time"),
         "[DataInterpolation] Error! Input file does not contain a 'time' dimension.\n"
         " - file name: " + fname + "\n");
       scorpio::mark_dim_as_time(fname,"time");
+    } else {
+
+      printf("it is false\n");
     }
     auto file_times = scorpio::get_all_times(fname);
+    printf("I am here file_times\n");
     EKAT_REQUIRE_MSG (file_times.size()>0,
         "[DataInterpolation] Error! Input file contains no time variable.\n"
         " - file name: " + fname + "\n");
@@ -444,6 +451,11 @@ setup_vert_remapper (const RemapData& data)
         " - model grid num vert levels: " + std::to_string(model_nlevs) + "\n"
         " - input data num vert levels: " + std::to_string(data_nlevs) + "\n");
     m_vert_remapper = std::make_shared<IDR>(m_grid_after_hremap,SAT);
+    return;
+  }
+
+  if (m_vr_type==MAM4xx) {
+    printf("seting up MAM4xx \n");
     return;
   }
 
