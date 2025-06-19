@@ -1755,6 +1755,7 @@ void AtmosphereDriver::finalize ( /* inputs? */ ) {
   start_timer("EAMxx::finalize");
 
   if (m_ad_status==0) {
+    stop_timer("EAMxx::finalize");
     return;
   }
 
