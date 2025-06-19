@@ -27,7 +27,7 @@ else()
 endif()
 
 # Handle gptl. Just hardcode it for now.
-list(APPEND PIOLIBS "${INSTALL_SHAREDPATH}/lib/libgptl.a")
+list(APPEND PIOLIBS "${INSTALL_SHAREDPATH}/lib/libgptl.so")
 
 # Find the MPI library
 if (NOT MPILIB STREQUAL "mpi-serial")
