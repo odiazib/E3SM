@@ -67,6 +67,9 @@ class MAMInterpolationMicrophysics final : public MAMGenericInterface {
   std::vector<std::string> m_var_names_oxi;
   std::shared_ptr<DataInterpolation>    m_data_interpolation;
 
+  std::vector<std::string> m_var_names_linoz;
+  std::shared_ptr<DataInterpolation>    m_data_interpolation_linoz;
+
 };  // MAMInterpolationMicrophysics
 
 }  // namespace scream

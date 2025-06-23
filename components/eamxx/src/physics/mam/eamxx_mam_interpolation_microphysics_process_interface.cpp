@@ -35,6 +35,16 @@ void MAMInterpolationMicrophysics::set_grids(
       add_field<Computed>(field_name, scalar3d_mid, nondim, grid_name);
   }
 
+  // linoz
+  m_var_names_linoz = {
+        "o3_clim",  "o3col_clim", "t_clim",      "PmL_clim",
+        "dPmL_dO3", "dPmL_dT",    "dPmL_dO3col", "cariolle_pscs"};
+
+  for(const auto &field_name : m_var_names_linoz) {
+      add_field<Computed>(field_name, scalar3d_mid, nondim, grid_name);
+  }
+
+
 }  // set_grids
 
 // ================================================================
@@ -79,7 +89,6 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
 
   util::TimeStamp ref_ts (1,1,1,0,0,0); // Beg of any year, since we use yearly periodic timeline
   m_data_interpolation = std::make_shared<DataInterpolation>(grid_,elevated_fields);
-
   m_data_interpolation->setup_time_database ({oxid_file_name},util::TimeLine::YearlyPeriodic, ref_ts);
 
   const std::string extfrc_map_file =
@@ -92,6 +101,32 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   remap_data.pint = pint;
   m_data_interpolation->setup_remappers (remap_data);
   m_data_interpolation->init_data_interval (start_of_step_ts());
+
+  printf("Working on linoz \n");
+#if 1
+  // linoz
+  const auto m_linoz_file_name = m_params.get<std::string>("mam4_linoz_file_name");
+  const std::string linoz_map_file =
+        m_params.get<std::string>("aero_microphys_remap_file", "");
+
+  std::vector<Field> linoz_fields;
+  for(const auto &field_name : m_var_names_linoz) {
+      elevated_fields.push_back(get_field_out(field_name));
+  }
+
+  m_data_interpolation_linoz = std::make_shared<DataInterpolation>(grid_,linoz_fields);
+  printf("linoz: setup_time_database \n");
+  m_data_interpolation_linoz->setup_time_database ({m_linoz_file_name},util::TimeLine::YearlyPeriodic, ref_ts);
+  printf("linoz: setup_time_database Done \n");
+  DataInterpolation::RemapData remap_data_linoz;
+  remap_data_linoz.hremap_file = linoz_map_file=="none" ? "" : linoz_map_file;
+  remap_data_linoz.vr_type = DataInterpolation::MAM4_ZONAL;
+  remap_data_linoz.pname = "PS";
+  remap_data_linoz.pmid = pmid;
+  remap_data_linoz.pint = pint;
+  // m_data_interpolation_linoz->setup_remappers (remap_data);
+  // m_data_interpolation_linoz->init_data_interval (start_of_step_ts());
+#endif
 }  // initialize_impl
 
 // ================================================================

@@ -21,6 +21,7 @@ public:
     Dynamic3D,    // Uses a time-dep 3d pressure from input data
     Dynamic3DRef, // Reconstructs a reference 3d pressure from time-dep PS in input data
     MAM4xx,
+    MAM4_ZONAL,
   };
 
   struct RemapData {

@@ -432,6 +432,11 @@ setup_vert_remapper (const RemapData& data)
 {
   m_vr_type = data.vr_type;
 
+  if (m_vr_type==MAM4_ZONAL) {
+    printf("MAM4 ZONAL");
+    return;
+  }
+
   if (m_vr_type==None) {
     using IDR = IdentityRemapper;
     constexpr auto SAT = IDR::SrcAliasTgt;
@@ -524,7 +529,7 @@ setup_vert_remapper (const RemapData& data)
 void DataInterpolation::register_fields_in_remappers ()
 {
   // Register fields in the remappers. Vertical first, since we only have model-grid fields
-  printf("m_nfields %d \n", m_nfields);
+  printf("register_fields_in_remappers %d \n", m_nfields);
   for (int i=0; i<m_nfields; ++i) {
     m_vert_remapper->register_field_from_tgt(m_fields[i]);
   }
@@ -542,6 +547,7 @@ void DataInterpolation::register_fields_in_remappers ()
   }
   m_horiz_remapper_beg->registration_ends();
   m_horiz_remapper_end->registration_ends();
+  printf("done.. %d \n", m_nfields);
 }
 
 } // namespace scream
