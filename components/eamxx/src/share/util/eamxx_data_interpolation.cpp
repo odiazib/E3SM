@@ -10,6 +10,7 @@
 #include "share/io/eamxx_io_utils.hpp"
 #include "share/util/eamxx_universal_constants.hpp"
 #include "physics/share/physics_constants.hpp"
+#include "physics/mam/readfiles/vertical_remapper_mam4.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -80,7 +81,7 @@ void DataInterpolation::run (const util::TimeStamp& ts)
     auto p = m_helper_pressure_fields["p_data"];
     p.deep_copy(p_beg);
     p.update(p_end,alpha,1-alpha);
-  } else if (m_vr_type==Dynamic3DRef) {
+  } else if (m_vr_type==Dynamic3DRef or m_vr_type==MAM4xx ) {
     // The surface pressure field is THE LAST registered in the horiz remappers
     const auto ps_beg = m_horiz_remapper_beg->get_tgt_field(m_nfields);
     const auto ps_end = m_horiz_remapper_end->get_tgt_field(m_nfields);
@@ -141,7 +142,7 @@ update_end_fields ()
     fields.push_back(m_horiz_remapper_end->get_src_field(i));
   }
 
-  if (m_vr_type==Dynamic3D or m_vr_type==Dynamic3DRef) {
+  if (m_vr_type==Dynamic3D or m_vr_type==Dynamic3DRef or m_vr_type==MAM4xx ) {
     // We also need to read the src pressure profile
     fields.push_back(m_horiz_remapper_end->get_src_field(m_nfields));
   }
@@ -606,7 +607,7 @@ void DataInterpolation::register_fields_in_remappers ()
     m_horiz_remapper_beg->register_field_from_tgt(f.clone(f.name(), m_horiz_remapper_beg->get_src_grid()->name()));
     m_horiz_remapper_end->register_field_from_tgt(f.clone(f.name(), m_horiz_remapper_end->get_src_grid()->name()));
   }
-  if (m_vr_type==Dynamic3D or m_vr_type==Dynamic3DRef) {
+  if (m_vr_type==Dynamic3D or m_vr_type==Dynamic3DRef or m_vr_type==MAM4xx) {
     const auto& data_p = m_helper_pressure_fields["p_file"];
     m_horiz_remapper_beg->register_field_from_tgt(data_p.clone(data_p.name(), m_horiz_remapper_beg->get_src_grid()->name()));
     m_horiz_remapper_end->register_field_from_tgt(data_p.clone(data_p.name(), m_horiz_remapper_end->get_src_grid()->name()));
