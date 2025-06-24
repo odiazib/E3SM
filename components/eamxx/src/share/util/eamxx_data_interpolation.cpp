@@ -432,11 +432,6 @@ setup_vert_remapper (const RemapData& data)
 {
   m_vr_type = data.vr_type;
 
-  if (m_vr_type==MAM4_ZONAL) {
-    printf("MAM4 ZONAL");
-    return;
-  }
-
   if (m_vr_type==None) {
     using IDR = IdentityRemapper;
     constexpr auto SAT = IDR::SrcAliasTgt;
@@ -452,6 +447,8 @@ setup_vert_remapper (const RemapData& data)
     return;
   }
 
+
+
   auto s2et = [](const std::string& s) {
     if (s=="P0") {
       return VerticalRemapper::P0;
@@ -466,14 +463,20 @@ setup_vert_remapper (const RemapData& data)
     }
   };
 
+
+
   // Setup vertical pressure profiles (which can add 1 extra field to hremap)
   // NOTES:
   //  - both Dynamic3D and Dynamic3DRef use a 3d profile for the data
   //  - p_data is the full 3d pressure where data is defined, while p_file is the field
   //    we read from file. For Static1D and Dynamic3D they are the same, but for
   //    Dynamic3DRef, p_file is the surf pressure (2d), while p_data is the full 3d pmid
-  auto p_layout = m_vr_type==Static1D ? m_grid_after_hremap->get_vertical_layout(true)
-                                      : m_grid_after_hremap->get_3d_scalar_layout(true);
+  FieldLayout p_layout;
+  if (m_vr_type==Static1D) {
+    p_layout = m_grid_after_hremap->get_vertical_layout(true);
+  } else {
+    p_layout = m_grid_after_hremap->get_3d_scalar_layout(true);
+  }
   auto& p_data = m_helper_pressure_fields ["p_data"];
   p_data = Field (FieldIdentifier("p_data",p_layout,ekat::units::Pa,m_grid_after_hremap->name()));
   p_data.get_header().get_alloc_properties().request_allocation(SCREAM_PACK_SIZE);
@@ -503,13 +506,41 @@ setup_vert_remapper (const RemapData& data)
   }
 
   if (m_vr_type==MAM4xx) {
-    printf("seting up MAM4xx \n");
     auto vremap = std::make_shared<VerticalRemapperMAM4>(m_grid_after_hremap, m_model_grid);
     vremap->set_source_pressure (m_helper_pressure_fields["p_data"]);
     vremap->set_target_pressure(data.pmid);
     m_vert_remapper = vremap;
     return;
   }
+
+  if (m_vr_type==MAM4_ZONAL) {
+    auto layout = m_grid_after_hremap->get_vertical_layout(true);
+    auto nondim = ekat::units::Units::nondimensional();
+    auto levs_field = m_grid_after_hremap->create_geometry_data("lev",layout,nondim);
+    AtmosphereInput p_data_reader (m_time_database.files.front(),m_grid_after_hremap,{levs_field},true);
+    p_data_reader.read_variables();
+    auto p_v  = p_data.get_view<Real **>();
+    auto levs = levs_field.get_view<const Real*>();
+    const int nlevs_data = layout.dims().back();
+    const int ncols = m_model_grid->get_num_local_dofs();
+    Kokkos::parallel_for(
+      "pressure_computation",
+      Kokkos::MDRangePolicy<Kokkos::Rank<2> >({0, 0}, {ncols, nlevs_data}),
+      KOKKOS_LAMBDA(const int icol, const int kk) {
+        // mbar->pascals
+        // FIXME: Does EAMxx have a better method to
+        // convert units?"
+        p_v(icol, kk) = levs(kk) * 100;
+    });
+
+    auto vremap = std::make_shared<VerticalRemapperMAM4>(m_grid_after_hremap, m_model_grid);
+    vremap->set_source_pressure (m_helper_pressure_fields["p_data"]);
+    vremap->set_target_pressure(data.pmid);
+    m_vert_remapper = vremap;
+    return;
+  }
+
+
 
   auto vremap = std::make_shared<VerticalRemapper>(m_grid_after_hremap,m_model_grid);
 
@@ -529,7 +560,6 @@ setup_vert_remapper (const RemapData& data)
 void DataInterpolation::register_fields_in_remappers ()
 {
   // Register fields in the remappers. Vertical first, since we only have model-grid fields
-  printf("register_fields_in_remappers %d \n", m_nfields);
   for (int i=0; i<m_nfields; ++i) {
     m_vert_remapper->register_field_from_tgt(m_fields[i]);
   }
@@ -547,7 +577,6 @@ void DataInterpolation::register_fields_in_remappers ()
   }
   m_horiz_remapper_beg->registration_ends();
   m_horiz_remapper_end->registration_ends();
-  printf("done.. %d \n", m_nfields);
 }
 
 } // namespace scream

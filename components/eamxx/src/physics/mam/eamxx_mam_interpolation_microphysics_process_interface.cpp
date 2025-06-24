@@ -83,9 +83,6 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   }
 
   auto pmid = get_field_in("p_mid");
-  Field pint(FieldIdentifier("p_int",grid_->get_vertical_layout(false),ekat::units::Pa,grid_->name()));
-  pint.get_header().get_alloc_properties().request_allocation(1);
-  pint.allocate_view();
 
   util::TimeStamp ref_ts (1,1,1,0,0,0); // Beg of any year, since we use yearly periodic timeline
   m_data_interpolation = std::make_shared<DataInterpolation>(grid_,elevated_fields);
@@ -98,12 +95,8 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   remap_data.vr_type = DataInterpolation::MAM4xx;
   remap_data.pname = "PS";
   remap_data.pmid = pmid;
-  remap_data.pint = pint;
   m_data_interpolation->setup_remappers (remap_data);
   m_data_interpolation->init_data_interval (start_of_step_ts());
-
-  printf("Working on linoz \n");
-#if 1
   // linoz
   const auto m_linoz_file_name = m_params.get<std::string>("mam4_linoz_file_name");
   const std::string linoz_map_file =
@@ -111,22 +104,18 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
 
   std::vector<Field> linoz_fields;
   for(const auto &field_name : m_var_names_linoz) {
-      elevated_fields.push_back(get_field_out(field_name));
+      linoz_fields.push_back(get_field_out(field_name));
   }
 
   m_data_interpolation_linoz = std::make_shared<DataInterpolation>(grid_,linoz_fields);
-  printf("linoz: setup_time_database \n");
   m_data_interpolation_linoz->setup_time_database ({m_linoz_file_name},util::TimeLine::YearlyPeriodic, ref_ts);
-  printf("linoz: setup_time_database Done \n");
   DataInterpolation::RemapData remap_data_linoz;
   remap_data_linoz.hremap_file = linoz_map_file=="none" ? "" : linoz_map_file;
   remap_data_linoz.vr_type = DataInterpolation::MAM4_ZONAL;
-  remap_data_linoz.pname = "PS";
+  remap_data_linoz.pname = "lev";
   remap_data_linoz.pmid = pmid;
-  remap_data_linoz.pint = pint;
-  // m_data_interpolation_linoz->setup_remappers (remap_data);
-  // m_data_interpolation_linoz->init_data_interval (start_of_step_ts());
-#endif
+  m_data_interpolation_linoz->setup_remappers (remap_data_linoz);
+  m_data_interpolation_linoz->init_data_interval (start_of_step_ts());
 }  // initialize_impl
 
 // ================================================================
@@ -134,6 +123,7 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
 // ================================================================
 void MAMInterpolationMicrophysics::run_impl(const double dt) {
   m_data_interpolation->run(end_of_step_ts());
+  m_data_interpolation_linoz->run(end_of_step_ts());
 }  // MAMInterpolationMicrophysics::run_impl
 
 }  // namespace scream

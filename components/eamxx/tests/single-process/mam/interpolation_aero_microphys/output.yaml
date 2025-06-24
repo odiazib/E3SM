@@ -10,6 +10,14 @@ fields:
       - OH
       - NO3
       - HO2
+      - o3_clim
+      - o3col_clim
+      - t_clim
+      - PmL_clim
+      - dPmL_dO3
+      - dPmL_dT
+      - dPmL_dO3col
+      - cariolle_pscs
 
 output_control:
   frequency: 1
