@@ -387,6 +387,14 @@ create_horiz_remappers (const std::string& map_file)
   int nlevs_data = get_input_files_dimlen (m_input_files_dimnames[LEV]);
   int ncols_data = get_input_files_dimlen (m_input_files_dimnames[COL]);
   m_grid_after_hremap = m_model_grid->clone("after_hremap",true);
+  int nlevs_data=0;
+  if (data.vr_type == MAM4_ELEVATED_EMISSIONS){
+    nlevs_data = get_input_files_dimlen ("altitude");
+    m_grid_after_hremap->reset_field_tag_name(ShortFieldTagsNames::LEV, "altitude");
+    m_grid_after_hremap->reset_field_tag_name(ShortFieldTagsNames::ILEV, "altitude_int");
+  } else {
+    nlevs_data = get_input_files_dimlen ("lev");
+  }
   m_grid_after_hremap->reset_num_vertical_lev(nlevs_data);
 
   int ncols_model = m_model_grid->get_num_global_dofs();
