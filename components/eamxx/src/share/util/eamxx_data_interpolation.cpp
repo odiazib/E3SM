@@ -10,7 +10,6 @@
 #include "share/io/eamxx_io_utils.hpp"
 #include "share/util/eamxx_universal_constants.hpp"
 #include "physics/share/physics_constants.hpp"
-#include "physics/mam/readfiles/vertical_remapper_mam4.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -81,7 +80,7 @@ void DataInterpolation::run (const util::TimeStamp& ts)
     auto p = m_helper_pressure_fields["p_data"];
     p.deep_copy(p_beg);
     p.update(p_end,alpha,1-alpha);
-  } else if (m_vr_type==Dynamic3DRef or m_vr_type==MAM4_PSRef ) {
+  } else if (m_vr_type==Dynamic3DRef) {
     // The surface pressure field is THE LAST registered in the horiz remappers
     const auto ps_beg = m_horiz_remapper_beg->get_tgt_field(m_nfields);
     const auto ps_end = m_horiz_remapper_end->get_tgt_field(m_nfields);
@@ -142,7 +141,7 @@ update_end_fields ()
     fields.push_back(m_horiz_remapper_end->get_src_field(i));
   }
 
-  if (m_vr_type==Dynamic3D or m_vr_type==Dynamic3DRef or m_vr_type==MAM4_PSRef ) {
+  if (m_vr_type==Dynamic3D or m_vr_type==Dynamic3DRef) {
     // We also need to read the src pressure profile
     fields.push_back(m_horiz_remapper_end->get_src_field(m_nfields));
   }
@@ -387,14 +386,6 @@ create_horiz_remappers (const std::string& map_file)
   int nlevs_data = get_input_files_dimlen (m_input_files_dimnames[LEV]);
   int ncols_data = get_input_files_dimlen (m_input_files_dimnames[COL]);
   m_grid_after_hremap = m_model_grid->clone("after_hremap",true);
-  int nlevs_data=0;
-  if (data.vr_type == MAM4_ELEVATED_EMISSIONS){
-    nlevs_data = get_input_files_dimlen ("altitude");
-    m_grid_after_hremap->reset_field_tag_name(ShortFieldTagsNames::LEV, "altitude");
-    m_grid_after_hremap->reset_field_tag_name(ShortFieldTagsNames::ILEV, "altitude_int");
-  } else {
-    nlevs_data = get_input_files_dimlen ("lev");
-  }
   m_grid_after_hremap->reset_num_vertical_lev(nlevs_data);
 
   int ncols_model = m_model_grid->get_num_global_dofs();
@@ -615,7 +606,7 @@ void DataInterpolation::register_fields_in_remappers ()
     m_horiz_remapper_beg->register_field_from_tgt(f.clone(f.name(), m_horiz_remapper_beg->get_src_grid()->name()));
     m_horiz_remapper_end->register_field_from_tgt(f.clone(f.name(), m_horiz_remapper_end->get_src_grid()->name()));
   }
-  if (m_vr_type==Dynamic3D or m_vr_type==Dynamic3DRef or m_vr_type==MAM4_PSRef) {
+  if (m_vr_type==Dynamic3D or m_vr_type==Dynamic3DRef) {
     const auto& data_p = m_helper_pressure_fields["p_file"];
     m_horiz_remapper_beg->register_field_from_tgt(data_p.clone(data_p.name(), m_horiz_remapper_beg->get_src_grid()->name()));
     m_horiz_remapper_end->register_field_from_tgt(data_p.clone(data_p.name(), m_horiz_remapper_end->get_src_grid()->name()));
