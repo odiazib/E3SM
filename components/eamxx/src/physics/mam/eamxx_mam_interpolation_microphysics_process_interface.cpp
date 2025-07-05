@@ -4,6 +4,7 @@
 
 #include "share/util/eamxx_data_interpolation.hpp"
 #include "readfiles/tracer_reader_utils.hpp"
+#include "physics/mam/readfiles/vertical_remapper_mam4.hpp"
 
 namespace scream {
 
@@ -129,16 +130,30 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   util::TimeStamp ref_ts_oxid= mam_coupling::convert_date(oxid_ymd);
   m_data_interpolation = std::make_shared<DataInterpolation>(grid_,elevated_fields);
   m_data_interpolation->setup_time_database ({oxid_file_name},util::TimeLine::YearlyPeriodic, ref_ts_oxid);
-
-  DataInterpolation::RemapData remap_data;
-  remap_data.hremap_file = oxid_map_file=="none" ? "" : oxid_map_file;
-  remap_data.vr_type = DataInterpolation::MAM4_PSRef;
+  m_data_interpolation->create_horiz_remappers (oxid_map_file=="none" ? "" : oxid_map_file);
+#if 1
+  std::cout << "Begin DataInterpolation" << "\n";
+  DataInterpolation::VertRemapData remap_data;
+  remap_data.vr_type = DataInterpolation::Dynamic3DRef;
   remap_data.pname = "PS";
   remap_data.pmid = pmid;
-  m_data_interpolation->setup_remappers (remap_data);
+  auto grid_after_hremap = m_data_interpolation->get_grid_after_hremap();
+  auto vertical_remapper= std::make_shared<VerticalRemapperMAM4>(grid_after_hremap, grid_,
+  VerticalRemapperMAM4::VertRemapType::MAM4_PSRef);
+  std::cout << "Done  vertical_remapper" << "\n";
+  remap_data.custom_remapper=vertical_remapper;
+  m_data_interpolation->create_vert_remapper (remap_data);
+  // NOTE: set pressure after allocation is done.
+  auto helper_pressure_fields = m_data_interpolation->get_helper_pressure_fields();
+  vertical_remapper->set_source_pressure(helper_pressure_fields["p_data"]);
+  vertical_remapper->set_target_pressure(pmid);
+  std::cout << "Done  create_vert_remapper" << "\n";
   m_data_interpolation->init_data_interval (start_of_step_ts());
+  std::cout << "Done  init_data_interval" << "\n";
   // linoz
+#endif
 
+#if 1
   // in format YYYYMMDD
   const int linoz_cyclical_ymd = m_params.get<int>("mam4_linoz_ymd");
   util::TimeStamp ref_ts_linoz = mam_coupling::convert_date(linoz_cyclical_ymd);
@@ -154,14 +169,29 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
 
   m_data_interpolation_linoz = std::make_shared<DataInterpolation>(grid_,linoz_fields);
   m_data_interpolation_linoz->setup_time_database ({m_linoz_file_name},util::TimeLine::YearlyPeriodic, ref_ts_linoz);
-  DataInterpolation::RemapData remap_data_linoz;
-  remap_data_linoz.hremap_file = linoz_map_file=="none" ? "" : linoz_map_file;
-  remap_data_linoz.vr_type = DataInterpolation::MAM4_ZONAL;
+  m_data_interpolation_linoz->create_horiz_remappers (linoz_map_file=="none" ? "" : linoz_map_file);
+
+  DataInterpolation::VertRemapData remap_data_linoz;
+  remap_data_linoz.vr_type = DataInterpolation::Custom;
   remap_data_linoz.pname = "lev";
   remap_data_linoz.pmid = pmid;
-  m_data_interpolation_linoz->setup_remappers (remap_data_linoz);
+  auto grid_after_hremap_linoz = m_data_interpolation_linoz->get_grid_after_hremap();
+  auto vertical_remapper_linoz = std::make_shared<VerticalRemapperMAM4>(grid_after_hremap_linoz, grid_,
+  VerticalRemapperMAM4::VertRemapType::MAM4_ZONAL);
+  remap_data_linoz.custom_remapper=vertical_remapper_linoz;
+  m_data_interpolation_linoz->create_vert_remapper (remap_data_linoz);
+  {
+    auto layout = grid_after_hremap_linoz->get_vertical_layout(true);
+    auto mbar = ekat::units::Units(100*ekat::units::Pa,"mbar");
+    auto levs_field = grid_after_hremap_linoz->create_geometry_data("lev",layout,mbar);
+    AtmosphereInput p_data_reader (m_linoz_file_name,grid_after_hremap_linoz,{levs_field},true);
+    p_data_reader.read_variables();
+    vertical_remapper_linoz->set_source_pressure (levs_field);
+    vertical_remapper_linoz->set_target_pressure(pmid);
+  }
   m_data_interpolation_linoz->init_data_interval (start_of_step_ts());
-
+#endif
+#if 1
   // Populate the wet atmosphere state with views from fields
   populate_wet_atm(wet_atm_);
   populate_dry_atm(dry_atm_, buffer_);
@@ -186,18 +216,36 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
     for(const auto &field_name :pair.second) {
       vertical_fields.push_back(get_field_out(field_name+"_"+var_name).alias(field_name));
     }
+//  #if 0
     std::shared_ptr<DataInterpolation> di_vertical = std::make_shared<DataInterpolation>(grid_,vertical_fields);
+    di_vertical->set_input_files_dimname(ShortFieldTagsNames::LEV,"altitude");
     di_vertical->setup_time_database ({file_name},util::TimeLine::YearlyPeriodic, ref_ts_vertical);
-    DataInterpolation::RemapData remap_data_vertical;
-    remap_data_vertical.hremap_file = extfrc_map_file=="none" ? "" : extfrc_map_file;
-    remap_data_vertical.vr_type = DataInterpolation::MAM4_ELEVATED_EMISSIONS;
+    di_vertical->create_horiz_remappers (extfrc_map_file=="none" ? "" : extfrc_map_file);
+    DataInterpolation::VertRemapData remap_data_vertical;
+    remap_data_vertical.vr_type = DataInterpolation::Custom;
     remap_data_vertical.pname = "altitude_int";
     remap_data_vertical.pmid = z_iface;
-    di_vertical->setup_remappers (remap_data_vertical);
+    auto grid_after_hremap_vertical = di_vertical->get_grid_after_hremap();
+    grid_after_hremap_vertical->reset_field_tag_name(ShortFieldTagsNames::LEV, "altitude");
+    grid_after_hremap_vertical->reset_field_tag_name(ShortFieldTagsNames::ILEV, "altitude_int");
+    auto vertical_remapper_elevated = std::make_shared<VerticalRemapperMAM4>(grid_after_hremap_vertical, grid_,
+    VerticalRemapperMAM4::VertRemapType::MAM4_ELEVATED_EMISSIONS);
+    remap_data_vertical.custom_remapper=vertical_remapper_elevated;
+    di_vertical->create_vert_remapper (remap_data_vertical);
     di_vertical->init_data_interval (start_of_step_ts());
+    {
+      auto layout = grid_after_hremap_vertical->get_vertical_layout(false);
+      auto mbar = ekat::units::Units(100*ekat::units::Pa,"mbar");
+      auto altitude_int_field = grid_after_hremap_vertical->create_geometry_data("altitude_int",layout,mbar);
+      AtmosphereInput p_data_reader (file_name,grid_after_hremap_vertical,{altitude_int_field},true);
+      p_data_reader.read_variables();
+      vertical_remapper_elevated->set_source_pressure(altitude_int_field);
+      vertical_remapper_elevated->set_target_pressure(z_iface);
+    }
     m_data_interpolation_vertical.push_back(di_vertical);
-  }//end var_name
 
+  }//end var_name
+#endif
 
 }  // initialize_impl
 
@@ -205,9 +253,11 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
 //  RUN_IMPL
 // ================================================================
 void MAMInterpolationMicrophysics::run_impl(const double dt) {
+  std::cout << "Begin  m_data_interpolation->run(end_of_step_ts())" << "\n";
   m_data_interpolation->run(end_of_step_ts());
+  std::cout << "Done  m_data_interpolation->run(end_of_step_ts())" << "\n";
   m_data_interpolation_linoz->run(end_of_step_ts());
-
+#if 1
   const auto &wet_atm = wet_atm_;
   const auto &dry_atm = dry_atm_;
 
@@ -226,7 +276,7 @@ void MAMInterpolationMicrophysics::run_impl(const double dt) {
   for (size_t i = 0; i < m_elevated_emis_var_names.size(); ++i) {
     m_data_interpolation_vertical[i]->run(end_of_step_ts());
   }
-
+#endif
 }  // MAMInterpolationMicrophysics::run_impl
 
 }  // namespace scream
