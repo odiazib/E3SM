@@ -77,6 +77,7 @@ set_source_pressure (const std::string& file_name )
     scorpio::read_var(file_name,"lev",levs_src.get_view<Real*,Host>().data());
     levs_src.sync_to_dev();
     scorpio::release_file(file_name);
+    m_src_pmid=levs_src;
   }
 }
 

@@ -131,8 +131,7 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   m_data_interpolation = std::make_shared<DataInterpolation>(grid_,elevated_fields);
   m_data_interpolation->setup_time_database ({oxid_file_name},util::TimeLine::YearlyPeriodic, ref_ts_oxid);
   m_data_interpolation->create_horiz_remappers (oxid_map_file=="none" ? "" : oxid_map_file);
-#if 1
-  std::cout << "Begin DataInterpolation" << "\n";
+
   DataInterpolation::VertRemapData remap_data;
   remap_data.vr_type = DataInterpolation::Dynamic3DRef;
   remap_data.pname = "PS";
@@ -140,20 +139,14 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   auto grid_after_hremap = m_data_interpolation->get_grid_after_hremap();
   auto vertical_remapper= std::make_shared<VerticalRemapperMAM4>(grid_after_hremap, grid_,
   VerticalRemapperMAM4::VertRemapType::MAM4_PSRef);
-  std::cout << "Done  vertical_remapper" << "\n";
   remap_data.custom_remapper=vertical_remapper;
   m_data_interpolation->create_vert_remapper (remap_data);
   // NOTE: set pressure after allocation is done.
   auto helper_pressure_fields = m_data_interpolation->get_helper_pressure_fields();
   vertical_remapper->set_source_pressure(helper_pressure_fields["p_data"]);
   vertical_remapper->set_target_pressure(pmid);
-  std::cout << "Done  create_vert_remapper" << "\n";
   m_data_interpolation->init_data_interval (start_of_step_ts());
-  std::cout << "Done  init_data_interval" << "\n";
   // linoz
-#endif
-
-#if 1
   // in format YYYYMMDD
   const int linoz_cyclical_ymd = m_params.get<int>("mam4_linoz_ymd");
   util::TimeStamp ref_ts_linoz = mam_coupling::convert_date(linoz_cyclical_ymd);
@@ -183,15 +176,13 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   remap_data_linoz.custom_remapper=vertical_remapper_linoz;
   m_data_interpolation_linoz->create_vert_remapper (remap_data_linoz);
   m_data_interpolation_linoz->init_data_interval (start_of_step_ts());
-#endif
-#if 1
+
   // Populate the wet atmosphere state with views from fields
   populate_wet_atm(wet_atm_);
   populate_dry_atm(dry_atm_, buffer_);
 
   //FIXME: units
   Field z_iface(FieldIdentifier("z_iface",grid_->get_3d_scalar_layout(false),ekat::units::Pa,grid_->name()));
-  // z_iface.get_header().get_alloc_properties().request_allocation(SCREAM_PACK_SIZE);
   z_iface.allocate_view();
   const auto z_iface_view = z_iface.get_view<  Real **>();
   dry_atm_.z_iface=z_iface_view;
@@ -209,7 +200,6 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
     for(const auto &field_name :pair.second) {
       vertical_fields.push_back(get_field_out(field_name+"_"+var_name).alias(field_name));
     }
-//  #if 0
     std::shared_ptr<DataInterpolation> di_vertical = std::make_shared<DataInterpolation>(grid_,vertical_fields);
     di_vertical->set_input_files_dimname(ShortFieldTagsNames::LEV,"altitude");
     di_vertical->setup_time_database ({file_name},util::TimeLine::YearlyPeriodic, ref_ts_vertical);
@@ -229,9 +219,7 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
     di_vertical->create_vert_remapper (remap_data_vertical);
     di_vertical->init_data_interval (start_of_step_ts());
     m_data_interpolation_vertical.push_back(di_vertical);
-
   }//end var_name
-#endif
 
 }  // initialize_impl
 
@@ -239,11 +227,8 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
 //  RUN_IMPL
 // ================================================================
 void MAMInterpolationMicrophysics::run_impl(const double dt) {
-  std::cout << "Begin  m_data_interpolation->run(end_of_step_ts())" << "\n";
   m_data_interpolation->run(end_of_step_ts());
-  std::cout << "Done  m_data_interpolation->run(end_of_step_ts())" << "\n";
   m_data_interpolation_linoz->run(end_of_step_ts());
-#if 1
   const auto &wet_atm = wet_atm_;
   const auto &dry_atm = dry_atm_;
 
@@ -262,7 +247,6 @@ void MAMInterpolationMicrophysics::run_impl(const double dt) {
   for (size_t i = 0; i < m_elevated_emis_var_names.size(); ++i) {
     m_data_interpolation_vertical[i]->run(end_of_step_ts());
   }
-#endif
 }  // MAMInterpolationMicrophysics::run_impl
 
 }  // namespace scream
