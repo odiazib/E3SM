@@ -178,17 +178,10 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   auto grid_after_hremap_linoz = m_data_interpolation_linoz->get_grid_after_hremap();
   auto vertical_remapper_linoz = std::make_shared<VerticalRemapperMAM4>(grid_after_hremap_linoz, grid_,
   VerticalRemapperMAM4::VertRemapType::MAM4_ZONAL);
+  vertical_remapper_linoz->set_source_pressure (m_linoz_file_name);
+  vertical_remapper_linoz->set_target_pressure(pmid);
   remap_data_linoz.custom_remapper=vertical_remapper_linoz;
   m_data_interpolation_linoz->create_vert_remapper (remap_data_linoz);
-  {
-    auto layout = grid_after_hremap_linoz->get_vertical_layout(true);
-    auto mbar = ekat::units::Units(100*ekat::units::Pa,"mbar");
-    auto levs_field = grid_after_hremap_linoz->create_geometry_data("lev",layout,mbar);
-    AtmosphereInput p_data_reader (m_linoz_file_name,grid_after_hremap_linoz,{levs_field},true);
-    p_data_reader.read_variables();
-    vertical_remapper_linoz->set_source_pressure (levs_field);
-    vertical_remapper_linoz->set_target_pressure(pmid);
-  }
   m_data_interpolation_linoz->init_data_interval (start_of_step_ts());
 #endif
 #if 1
@@ -230,18 +223,11 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
     grid_after_hremap_vertical->reset_field_tag_name(ShortFieldTagsNames::ILEV, "altitude_int");
     auto vertical_remapper_elevated = std::make_shared<VerticalRemapperMAM4>(grid_after_hremap_vertical, grid_,
     VerticalRemapperMAM4::VertRemapType::MAM4_ELEVATED_EMISSIONS);
+    vertical_remapper_elevated->set_source_pressure(file_name);
+    vertical_remapper_elevated->set_target_pressure(z_iface);
     remap_data_vertical.custom_remapper=vertical_remapper_elevated;
     di_vertical->create_vert_remapper (remap_data_vertical);
     di_vertical->init_data_interval (start_of_step_ts());
-    {
-      auto layout = grid_after_hremap_vertical->get_vertical_layout(false);
-      auto mbar = ekat::units::Units(100*ekat::units::Pa,"mbar");
-      auto altitude_int_field = grid_after_hremap_vertical->create_geometry_data("altitude_int",layout,mbar);
-      AtmosphereInput p_data_reader (file_name,grid_after_hremap_vertical,{altitude_int_field},true);
-      p_data_reader.read_variables();
-      vertical_remapper_elevated->set_source_pressure(altitude_int_field);
-      vertical_remapper_elevated->set_target_pressure(z_iface);
-    }
     m_data_interpolation_vertical.push_back(di_vertical);
 
   }//end var_name

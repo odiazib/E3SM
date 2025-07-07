@@ -30,6 +30,7 @@ public:
 
   void set_source_pressure (const Field& p);
   void set_target_pressure (const Field& p);
+  void set_source_pressure (const std::string& file_name);
 
 protected:
 
@@ -59,7 +60,7 @@ protected:
   // Vertical profile fields, both for source and target
   Field                 m_src_pmid;
   Field                 m_tgt_pmid;
-  VertRemapType            m_vremap_type;
+  VertRemapType         m_vremap_type;
 };
 
 } // namespace scream
