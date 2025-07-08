@@ -373,14 +373,6 @@ get_input_files_dimlen (const std::string& dimname) const
   }
   return dimlen;
 }
-std::shared_ptr<AbstractGrid> DataInterpolation::get_grid_after_hremap()
-  {
-    return m_grid_after_hremap;
-  };
-std::map<std::string,Field> DataInterpolation::get_helper_pressure_fields()
-{
-  return m_helper_pressure_fields;
-}
 
 void DataInterpolation::
 create_horiz_remappers (const std::string& map_file)

@@ -136,15 +136,15 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   remap_data.vr_type = DataInterpolation::Dynamic3DRef;
   remap_data.pname = "PS";
   remap_data.pmid = pmid;
-  auto grid_after_hremap = m_data_interpolation->get_grid_after_hremap();
+  auto grid_after_hremap = m_data_interpolation->grid_after_hremap();
   auto vertical_remapper= std::make_shared<VerticalRemapperMAM4>(grid_after_hremap, grid_,
   VerticalRemapperMAM4::VertRemapType::MAM4_PSRef);
   remap_data.custom_remapper=vertical_remapper;
   m_data_interpolation->create_vert_remapper (remap_data);
-  // NOTE: set pressure after allocation is done.
-  auto helper_pressure_fields = m_data_interpolation->get_helper_pressure_fields();
-  vertical_remapper->set_source_pressure(helper_pressure_fields["p_data"]);
-  vertical_remapper->set_target_pressure(pmid);
+  // // NOTE: set pressure after allocation is done.
+  // // auto helper_pressure_fields = m_data_interpolation->get_helper_pressure_fields();
+  // // vertical_remapper->set_source_pressure(helper_pressure_fields["p_data"]);
+  // vertical_remapper->set_target_pressure(pmid);
   m_data_interpolation->init_data_interval (start_of_step_ts());
   // linoz
   // in format YYYYMMDD
@@ -168,7 +168,7 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   remap_data_linoz.vr_type = DataInterpolation::Custom;
   remap_data_linoz.pname = "lev";
   remap_data_linoz.pmid = pmid;
-  auto grid_after_hremap_linoz = m_data_interpolation_linoz->get_grid_after_hremap();
+  auto grid_after_hremap_linoz = m_data_interpolation_linoz->grid_after_hremap();
   auto vertical_remapper_linoz = std::make_shared<VerticalRemapperMAM4>(grid_after_hremap_linoz, grid_,
   VerticalRemapperMAM4::VertRemapType::MAM4_ZONAL);
   vertical_remapper_linoz->set_source_pressure (m_linoz_file_name);
@@ -208,7 +208,7 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
     remap_data_vertical.vr_type = DataInterpolation::Custom;
     remap_data_vertical.pname = "altitude_int";
     remap_data_vertical.pmid = z_iface;
-    auto grid_after_hremap_vertical = di_vertical->get_grid_after_hremap();
+    auto grid_after_hremap_vertical = di_vertical->grid_after_hremap();
     grid_after_hremap_vertical->reset_field_tag_name(ShortFieldTagsNames::LEV, "altitude");
     grid_after_hremap_vertical->reset_field_tag_name(ShortFieldTagsNames::ILEV, "altitude_int");
     auto vertical_remapper_elevated = std::make_shared<VerticalRemapperMAM4>(grid_after_hremap_vertical, grid_,

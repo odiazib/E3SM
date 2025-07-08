@@ -18,20 +18,12 @@ VerticalRemapperMAM4::
 VerticalRemapperMAM4 (const grid_ptr_type& src_grid,
                   const grid_ptr_type& tgt_grid,
                   const VertRemapType& vremp_type)
-{
-  // We only go in one direction for simplicity, since we need to setup some
-  // infrsatructures, and we don't want to setup 2x as many "just in case".
-  // If you need to remap bwd, just create another remapper with src/tgt grids swapped.
-  m_bwd_allowed = false;
-
+:VerticalRemapper(src_grid,
+                  tgt_grid,
+                  true,
+                  true) {
   m_vremap_type=vremp_type;
-
-  EKAT_REQUIRE_MSG (src_grid->get_2d_scalar_layout().congruent(tgt_grid->get_2d_scalar_layout()),
-      "Error! Source and target grid can only differ for their number of level.\n");
-
-  this->set_grids (src_grid,tgt_grid);
 }
-
 
 void VerticalRemapperMAM4::remap_fwd_impl ()
 {
