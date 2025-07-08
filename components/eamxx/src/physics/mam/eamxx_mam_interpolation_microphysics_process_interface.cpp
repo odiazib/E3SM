@@ -122,9 +122,7 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   for(const auto &field_name : m_var_names_oxi) {
       elevated_fields.push_back(get_field_out(field_name));
   }
-
   auto pmid = get_field_in("p_mid");
-
   // in format YYYYMMDD
   const int oxid_ymd = m_params.get<int>("mam4_oxid_ymd");
   util::TimeStamp ref_ts_oxid= mam_coupling::convert_date(oxid_ymd);
@@ -136,15 +134,16 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   remap_data.vr_type = DataInterpolation::Dynamic3DRef;
   remap_data.pname = "PS";
   remap_data.pmid = pmid;
-  auto grid_after_hremap = m_data_interpolation->grid_after_hremap();
-  auto vertical_remapper= std::make_shared<VerticalRemapperMAM4>(grid_after_hremap, grid_,
-  VerticalRemapperMAM4::VertRemapType::MAM4_PSRef);
-  remap_data.custom_remapper=vertical_remapper;
+  bool mam4_use_eamxx_vertical_remp=false;
+
+  if (mam4_use_eamxx_vertical_remp){
+    auto grid_after_hremap = m_data_interpolation->grid_after_hremap();
+    auto vertical_remapper= std::make_shared<VerticalRemapperMAM4>(grid_after_hremap, grid_,
+    VerticalRemapperMAM4::VertRemapType::MAM4_PSRef);
+    remap_data.custom_remapper=vertical_remapper;
+  }
+
   m_data_interpolation->create_vert_remapper (remap_data);
-  // // NOTE: set pressure after allocation is done.
-  // // auto helper_pressure_fields = m_data_interpolation->get_helper_pressure_fields();
-  // // vertical_remapper->set_source_pressure(helper_pressure_fields["p_data"]);
-  // vertical_remapper->set_target_pressure(pmid);
   m_data_interpolation->init_data_interval (start_of_step_ts());
   // linoz
   // in format YYYYMMDD
@@ -165,14 +164,12 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   m_data_interpolation_linoz->create_horiz_remappers (linoz_map_file=="none" ? "" : linoz_map_file);
 
   DataInterpolation::VertRemapData remap_data_linoz;
-  remap_data_linoz.vr_type = DataInterpolation::Custom;
+  remap_data_linoz.vr_type = DataInterpolation::Static1D;
   remap_data_linoz.pname = "lev";
   remap_data_linoz.pmid = pmid;
   auto grid_after_hremap_linoz = m_data_interpolation_linoz->grid_after_hremap();
   auto vertical_remapper_linoz = std::make_shared<VerticalRemapperMAM4>(grid_after_hremap_linoz, grid_,
   VerticalRemapperMAM4::VertRemapType::MAM4_ZONAL);
-  vertical_remapper_linoz->set_source_pressure (m_linoz_file_name);
-  vertical_remapper_linoz->set_target_pressure(pmid);
   remap_data_linoz.custom_remapper=vertical_remapper_linoz;
   m_data_interpolation_linoz->create_vert_remapper (remap_data_linoz);
   m_data_interpolation_linoz->init_data_interval (start_of_step_ts());
@@ -190,7 +187,6 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   const std::string extfrc_map_file =
         m_params.get<std::string>("aero_microphys_remap_file", "");
   int elevated_emiss_cyclical_ymd = m_params.get<int>("elevated_emiss_ymd");
-
   for(const auto &pair : m_elevated_emis_var_names) {
     const auto& var_name=pair.first;
     std::string item_name = "mam4_" + var_name + "_elevated_emiss_file_name";
@@ -206,7 +202,6 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
     di_vertical->create_horiz_remappers (extfrc_map_file=="none" ? "" : extfrc_map_file);
     DataInterpolation::VertRemapData remap_data_vertical;
     remap_data_vertical.vr_type = DataInterpolation::Custom;
-    remap_data_vertical.pname = "altitude_int";
     remap_data_vertical.pmid = z_iface;
     auto grid_after_hremap_vertical = di_vertical->grid_after_hremap();
     grid_after_hremap_vertical->reset_field_tag_name(ShortFieldTagsNames::LEV, "altitude");
@@ -227,6 +222,7 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
 //  RUN_IMPL
 // ================================================================
 void MAMInterpolationMicrophysics::run_impl(const double dt) {
+
   m_data_interpolation->run(end_of_step_ts());
   m_data_interpolation_linoz->run(end_of_step_ts());
   const auto &wet_atm = wet_atm_;
@@ -243,7 +239,6 @@ void MAMInterpolationMicrophysics::run_impl(const double dt) {
         // for atmosphere
         mam_coupling::compute_vertical_layer_heights(team, dry_atm, i);
       });
-
   for (size_t i = 0; i < m_elevated_emis_var_names.size(); ++i) {
     m_data_interpolation_vertical[i]->run(end_of_step_ts());
   }

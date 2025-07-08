@@ -21,7 +21,7 @@ VerticalRemapperMAM4 (const grid_ptr_type& src_grid,
 :VerticalRemapper(src_grid,
                   tgt_grid,
                   true,
-                  true) {
+                  false) {
   m_vremap_type=vremp_type;
 }
 
@@ -48,7 +48,6 @@ set_target_pressure (const Field& p)
 void VerticalRemapperMAM4::
 set_source_pressure (const std::string& file_name )
 {
-  //FIXME: can get altitude_int from src grid wo opening the file?
   if (m_vremap_type == MAM4_ELEVATED_EMISSIONS) {
     auto layout = m_src_grid->get_vertical_layout(false);
     auto mbar = ekat::units::Units(100*ekat::units::Pa,"mbar");
@@ -59,17 +58,6 @@ set_source_pressure (const std::string& file_name )
     altitude_int_src.sync_to_dev();
     scorpio::release_file(file_name);
     m_src_pmid=altitude_int_src;
-  } else if (m_vremap_type == MAM4_ZONAL)
-  {
-    auto layout = m_src_grid->get_vertical_layout(true);
-    auto mbar = ekat::units::Units(100*ekat::units::Pa,"mbar");
-    Field levs_src(FieldIdentifier("altitude_int_field",layout,mbar,m_src_grid->name()));
-    levs_src.allocate_view();
-    scorpio::register_file(file_name,scorpio::FileMode::Read);
-    scorpio::read_var(file_name,"lev",levs_src.get_view<Real*,Host>().data());
-    levs_src.sync_to_dev();
-    scorpio::release_file(file_name);
-    m_src_pmid=levs_src;
   }
 }
 

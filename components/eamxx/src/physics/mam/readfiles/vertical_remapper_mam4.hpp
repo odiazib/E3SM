@@ -55,12 +55,6 @@ protected:
 
   // a thread team dispatched to a single vertical column
   using ThreadTeam = mam4::ThreadTeam;
-
-  // ekat::Comm            m_comm;
-
-  // Vertical profile fields, both for source and target
-  // Field                 m_src_pmid;
-  // Field                 m_tgt_pmid;
   VertRemapType         m_vremap_type;
 };
 
