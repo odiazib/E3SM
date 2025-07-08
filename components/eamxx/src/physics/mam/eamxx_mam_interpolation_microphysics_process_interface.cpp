@@ -137,7 +137,7 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   bool mam4_use_eamxx_vertical_remp=false;
 
   if (mam4_use_eamxx_vertical_remp){
-    auto grid_after_hremap = m_data_interpolation->grid_after_hremap();
+    auto grid_after_hremap = m_data_interpolation->get_grid_after_hremap();
     auto vertical_remapper= std::make_shared<VerticalRemapperMAM4>(grid_after_hremap, grid_,
     VerticalRemapperMAM4::VertRemapType::MAM4_PSRef);
     remap_data.custom_remapper=vertical_remapper;
@@ -167,7 +167,7 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
   remap_data_linoz.vr_type = DataInterpolation::Static1D;
   remap_data_linoz.pname = "lev";
   remap_data_linoz.pmid = pmid;
-  auto grid_after_hremap_linoz = m_data_interpolation_linoz->grid_after_hremap();
+  auto grid_after_hremap_linoz = m_data_interpolation_linoz->get_grid_after_hremap();
   auto vertical_remapper_linoz = std::make_shared<VerticalRemapperMAM4>(grid_after_hremap_linoz, grid_,
   VerticalRemapperMAM4::VertRemapType::MAM4_ZONAL);
   remap_data_linoz.custom_remapper=vertical_remapper_linoz;
@@ -203,7 +203,7 @@ void MAMInterpolationMicrophysics::initialize_impl(const RunType run_type) {
     DataInterpolation::VertRemapData remap_data_vertical;
     remap_data_vertical.vr_type = DataInterpolation::Custom;
     remap_data_vertical.pmid = z_iface;
-    auto grid_after_hremap_vertical = di_vertical->grid_after_hremap();
+    auto grid_after_hremap_vertical = di_vertical->get_grid_after_hremap();
     grid_after_hremap_vertical->reset_field_tag_name(ShortFieldTagsNames::LEV, "altitude");
     grid_after_hremap_vertical->reset_field_tag_name(ShortFieldTagsNames::ILEV, "altitude_int");
     auto vertical_remapper_elevated = std::make_shared<VerticalRemapperMAM4>(grid_after_hremap_vertical, grid_,
