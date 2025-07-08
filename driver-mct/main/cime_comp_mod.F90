@@ -3766,6 +3766,8 @@ contains
 
     call t_finalizef()
 
+    call mpi_finalize(ierr)
+
   end subroutine cime_final
 
   !===============================================================================
