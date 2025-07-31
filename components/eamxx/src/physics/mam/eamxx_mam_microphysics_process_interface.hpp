@@ -110,6 +110,7 @@ class MAMMicrophysics final : public MAMGenericInterface {
   std::vector<std::string> var_names_oxi_;
   // names of linoz field
   std::vector<std::string> var_names_linoz_;
+  view_3d photo_rates_test_;
 
 #ifdef USE_OLD_LINOZ_FILE_READ
   // invariants members
@@ -117,6 +118,8 @@ class MAMMicrophysics final : public MAMGenericInterface {
   std::shared_ptr<AtmosphereInput> TracerDataReader_;
   std::shared_ptr<AbstractRemapper> TracerHorizInterp_;
   mam_coupling::TracerData tracer_data_;
+  view_3d invariants_;
+  view_3d invariants_test_;
   std::string oxid_file_name_;
   view_2d cnst_offline_[4];
 #else
@@ -153,6 +156,7 @@ class MAMMicrophysics final : public MAMGenericInterface {
   std::vector<std::string> extfrc_lst_;
 
   view_3d extfrc_;
+  view_3d extfrc_test_;
   mam_coupling::ForcingHelper forcings_[mam4::gas_chemistry::extcnt];
 
   view_1d_host acos_cosine_zenith_host_;
@@ -179,6 +183,8 @@ class MAMMicrophysics final : public MAMGenericInterface {
   int get_len_temporary_views();
   void init_temporary_views();
   int len_temporary_views_{0};
+
+  view_2d o3_col_dens_test_;
 
   void add_io_docstring_to_fields_with_mixed_units(const std::map<std::string, std::string> &flds) {
     using str_atts_t = std::map<std::string,std::string>;
