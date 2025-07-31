@@ -7,6 +7,8 @@
 #include "readfiles/photo_table_utils.cpp"
 #include "physics/mam/readfiles/vertical_remapper_mam4.hpp"
 #include "share/util/eamxx_data_interpolation.hpp"
+#include "helper_hash.cpp"
+
 
 namespace scream {
 
@@ -253,7 +255,7 @@ void MAMMicrophysics::set_grids(
 #ifdef USE_OLD_LINOZ_FILE_READ
   if (config_.linoz.compute) {
 
-    std::cout << "Using former reader..." << "\n";
+    std::cout << "Using former reader LINOZ..." << "\n";
     linoz_file_name_ = m_params.get<std::string>("mam4_linoz_file_name");
     const std::string linoz_map_file =
         m_params.get<std::string>("aero_microphys_remap_file", "");
@@ -306,6 +308,7 @@ void MAMMicrophysics::set_grids(
   }  // oxid file reader
 
 #else
+  std::cout << "Using former reader LINOZ..." << "\n";
   if (config_.linoz.compute) {
     // The DataInterpolation class uses Field. We save these fields in FM.
     for(const auto &field_name : var_names_linoz_) {
@@ -340,6 +343,7 @@ void MAMMicrophysics::set_grids(
 
 #ifdef USE_OLD_VERTICAL_FILE_READ
   {
+    std::cout << "Using former reader vertical..." << "\n";
     const std::string extfrc_map_file =
         m_params.get<std::string>("aero_microphys_remap_file", "");
     // NOTE: order of forcing species is important.
@@ -403,7 +407,8 @@ void MAMMicrophysics::set_grids(
     }  // end i
 
   }  // Tracer external forcing data
-#else
+// #else
+  std::cout << "Using new reader vertical..." << "\n";
   // Fields for elevated emissions.
   for(const auto &pair : elevated_emis_var_names_) {
     const auto &var_name =pair.first;
@@ -581,7 +586,7 @@ void MAMMicrophysics::set_linoz_reader(){
 }
 #endif
 
-#ifndef USE_OLD_VERTICAL_FILE_READ
+// #ifndef USE_OLD_VERTICAL_FILE_READ
 // set DataInterpolation object for elevated emissions reader.
 void MAMMicrophysics::set_elevated_emissions_reader()
 {
@@ -620,7 +625,7 @@ void MAMMicrophysics::set_elevated_emissions_reader()
     data_interp_elevated_emissions_.push_back(di_vertical);
   }//end var_name
 }
-#endif
+// #endif
 // ================================================================
 //  INITIALIZE_IMPL
 // ================================================================
@@ -769,22 +774,22 @@ void MAMMicrophysics::initialize_impl(const RunType run_type) {
         ElevatedEmissionsDataReader_[i], curr_month,
         *ElevatedEmissionsHorizInterp_[i], elevated_emis_data_[i]);
   }
-#else
+// #else
   {
     set_elevated_emissions_reader();
     for(size_t i = 0; i < extfrc_lst_.size(); ++i) {
       std::string var_name = extfrc_lst_[i];
       const auto sector_names = elevated_emis_var_names_[var_name];
       const int nvars      = static_cast<int>(sector_names.size());
-      forcings_[i].nsectors = nvars;
+      test_forcings_[i].nsectors = nvars;
       // I am assuming the order of species in extfrc_lst_.
       // Indexing in mam4xx is fortran.
-      forcings_[i].frc_ndx = i + 1;
-      forcings_[i].file_alt_data = true;
+      test_forcings_[i].frc_ndx = i + 1;
+      test_forcings_[i].file_alt_data = true;
       for(int isp = 0; isp < nvars; ++isp)
       {
         const std::string field_name = sector_names[isp]+"_"+var_name;
-        forcings_[i].fields[isp] = get_field_out(field_name).get_view<Real **>();
+        test_forcings_[i].fields[isp] = get_field_out(field_name).get_view<Real **>();
       }//isp
     } //i
   }
@@ -994,6 +999,7 @@ void MAMMicrophysics::run_impl(const double dt) {
 #endif
 
 #ifdef USE_OLD_VERTICAL_FILE_READ
+#if 1
   int i                            = 0;
   for(const auto &var_name : extfrc_lst_) {
     elevated_emiss_time_state_[i].t_now = ts.frac_of_year_in_days();
@@ -1007,7 +1013,8 @@ void MAMMicrophysics::run_impl(const double dt) {
     i++;
     Kokkos::fence();
   }
-#else
+#endif
+// #else
   for (size_t i = 0; i < elevated_emis_var_names_.size(); ++i) {
     data_interp_elevated_emissions_[i]->run(end_of_step_ts());
   }
@@ -1084,7 +1091,8 @@ void MAMMicrophysics::run_impl(const double dt) {
   constexpr int num_gas_aerosol_constituents = mam_coupling::gas_pcnst();
 
   const auto &extfrc   = extfrc_;
-  const auto &forcings = forcings_;
+  const auto &forcings = test_forcings_;
+  // const auto &forcings = forcings_;
   constexpr int extcnt = mam4::gas_chemistry::extcnt;
 
   const int offset_aerosol = mam4::utils::gasses_start_ind();
@@ -1113,6 +1121,25 @@ void MAMMicrophysics::run_impl(const double dt) {
   //NOTE: we need to initialize photo_rates_
   Kokkos::deep_copy(photo_rates_,0.0);
   // loop over atmosphere columns and compute aerosol microphysics
+  for(int i = 0; i < extcnt; ++i) {
+    const int nsectors       = forcings_[i].nsectors;
+    const int frc_ndx        = forcings_[i].frc_ndx;
+    const auto file_alt_data = forcings_[i].file_alt_data;
+    if (m_comm.am_i_root()) {
+      std::cout << "--------i : "<< i<< "---------" << std::endl;
+      std::cout << "nsectors: " << nsectors << std::endl;
+      std::cout << "frc_ndx: " << frc_ndx << std::endl;
+      std::cout << "file_alt_data: " << file_alt_data << std::endl;
+    }
+    for(int isec = 0; isec < forcings_[i].nsectors; ++isec) {
+     const auto& field = forcings_[i].fields[isec];
+     const auto& field2 = test_forcings_[i].fields[isec];
+     scream::impl::compute_and_print_hash(field2, "forc_new_",i,isec);
+     scream::impl::compute_and_print_hash(field, "forc_old_",i,isec);
+     scream::impl::compute_and_print_sum(field2, "forc_new_",i,isec);
+     scream::impl::compute_and_print_sum(field, "forc_old_",i,isec);
+    }  // extcnt for loop
+}
 
   Kokkos::parallel_for(
       "MAMMicrophysics::run_impl", policy,

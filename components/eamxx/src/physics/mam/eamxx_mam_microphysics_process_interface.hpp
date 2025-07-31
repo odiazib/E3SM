@@ -145,7 +145,7 @@ class MAMMicrophysics final : public MAMGenericInterface {
   std::vector<std::shared_ptr<AbstractRemapper>> ElevatedEmissionsHorizInterp_;
   std::vector<mam_coupling::TracerData> elevated_emis_data_;
   std::map<std::string, std::string> elevated_emis_file_name_;
-#else
+// #else
   // data interpolation object for elevated emissions
   std::vector<std::shared_ptr<DataInterpolation>> data_interp_elevated_emissions_;
   void set_elevated_emissions_reader();
@@ -154,6 +154,7 @@ class MAMMicrophysics final : public MAMGenericInterface {
 
   view_3d extfrc_;
   mam_coupling::ForcingHelper forcings_[mam4::gas_chemistry::extcnt];
+  mam_coupling::ForcingHelper test_forcings_[mam4::gas_chemistry::extcnt];
 
   view_1d_host acos_cosine_zenith_host_;
   view_1d acos_cosine_zenith_;
