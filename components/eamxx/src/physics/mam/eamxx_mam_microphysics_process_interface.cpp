@@ -13,6 +13,7 @@
 // #include "helper_hash.cpp"
 #define MICRO_SMALL_KERNELS
 // #define MICRO_SMALL_KERNELS
+#define MICRO_SMALL_KERNELS
 #include <physics/mam/eamxx_mam_microphysics_process_functions.cpp>
 
 namespace scream {
@@ -487,6 +488,8 @@ int MAMMicrophysics::get_len_temporary_views() {
   work_len += ncol_ * nlev_*gas_pcnst;
   //   vmr_pregas_ vmr_precld_
   work_len += 2* ncol_ * nlev_*gas_pcnst;
+  // dqdt_aqso4_, dqdt_aqh2so4_
+  work_len += 2*ncol_ *nlev_*gas_pcnst;
   return work_len;
 }
 void MAMMicrophysics::init_temporary_views() {
@@ -528,6 +531,11 @@ void MAMMicrophysics::init_temporary_views() {
   vmr_pregas_ = view_3d(work_ptr, ncol_, nlev_,gas_pcnst );
   work_ptr += ncol_ *nlev_*gas_pcnst;
   vmr_precld_ =view_3d(work_ptr, ncol_, nlev_,gas_pcnst );
+  work_ptr += ncol_ *nlev_*gas_pcnst;
+
+  dqdt_aqso4_=view_3d(work_ptr, ncol_, nlev_,gas_pcnst );
+  work_ptr += ncol_ *nlev_*gas_pcnst;
+  dqdt_aqh2so4_=view_3d(work_ptr, ncol_, nlev_,gas_pcnst );
   work_ptr += ncol_ *nlev_*gas_pcnst;
 
 
