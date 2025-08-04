@@ -61,7 +61,11 @@ class MAMMicrophysics final : public MAMGenericInterface {
   // Finalize
   void finalize_impl(){/*Do nothing*/};
 
+
  private:
+
+  void run_small_kernels_microphysics(const double dt, const double eccf);
+
   // Output extra mam4xx diagnostics.
   bool extra_mam4_aero_microphys_diags_ = false;
 
@@ -106,11 +110,6 @@ class MAMMicrophysics final : public MAMGenericInterface {
   std::vector<Real> chlorine_values_;
   std::vector<int> chlorine_time_secs_;
   view_3d photo_rates_;
-  // names of oxi variants
-  std::vector<std::string> var_names_oxi_;
-  // names of linoz field
-  std::vector<std::string> var_names_linoz_;
-  view_3d photo_rates_test_;
 
 #ifdef USE_OLD_LINOZ_FILE_READ
   // invariants members
@@ -119,7 +118,6 @@ class MAMMicrophysics final : public MAMGenericInterface {
   std::shared_ptr<AbstractRemapper> TracerHorizInterp_;
   mam_coupling::TracerData tracer_data_;
   view_3d invariants_;
-  view_3d invariants_test_;
   std::string oxid_file_name_;
   view_2d cnst_offline_[4];
 #else
@@ -156,7 +154,6 @@ class MAMMicrophysics final : public MAMGenericInterface {
   std::vector<std::string> extfrc_lst_;
 
   view_3d extfrc_;
-  view_3d extfrc_test_;
   mam_coupling::ForcingHelper forcings_[mam4::gas_chemistry::extcnt];
 
   view_1d_host acos_cosine_zenith_host_;
@@ -184,8 +181,6 @@ class MAMMicrophysics final : public MAMGenericInterface {
   void init_temporary_views();
   int len_temporary_views_{0};
 
-  view_2d o3_col_dens_test_;
-
   view_3d state_q_, qqcw_pcnst_, qq_, qqcw_, vmr_,vmr0_, vmrcw_;
   view_3d het_rates_, vmr_pregas_, vmr_precld_;
 
@@ -202,6 +197,8 @@ class MAMMicrophysics final : public MAMGenericInterface {
       io_str_atts["doc"] = pair.second;
     }
   }
+
+
 };  // MAMMicrophysics
 
 }  // namespace scream
