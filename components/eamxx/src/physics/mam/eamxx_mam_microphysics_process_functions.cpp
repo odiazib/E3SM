@@ -45,8 +45,13 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
   // set external forcing ends
 
   // set invariants
+  const auto oxid_O3 = get_field_out("O3").get_view<Real **>();
+  const auto oxid_OH = get_field_out("OH").get_view<Real **>();
+  const auto oxid_NO3 = get_field_out("NO3").get_view<Real **>();
+  const auto oxid_HO2 = get_field_out("HO2").get_view<Real **>();
+
   const auto& invariants = invariants_;
-  const auto& cnst_offline=cnst_offline_;
+  // const auto& cnst_offline=cnst_offline_;
   const auto& dry_atm = dry_atm_;
   Kokkos::parallel_for(
       "MAMMicrophysics::run_impl::setinv", policy,
@@ -56,9 +61,14 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
       const auto atm = mam_coupling::atmosphere_for_column(dry_atm, icol);
       const auto invariants_icol = ekat::subview(invariants, icol);
       view_1d cnst_offline_icol[mam4::mo_setinv::num_tracer_cnst];
-        for(int i = 0; i < mam4::mo_setinv::num_tracer_cnst; ++i) {
-          cnst_offline_icol[i] = ekat::subview(cnst_offline[i], icol);
-        }
+        // for(int i = 0; i < mam4::mo_setinv::num_tracer_cnst; ++i) {
+          // cnst_offline_icol[i] = ekat::subview(cnst_offline[i], icol);
+        // }
+      cnst_offline_icol[0] = ekat::subview(oxid_O3, icol);;
+      cnst_offline_icol[1] = ekat::subview(oxid_OH, icol);;
+      cnst_offline_icol[2] = ekat::subview(oxid_NO3, icol);;
+      cnst_offline_icol[3] = ekat::subview(oxid_HO2, icol);;
+
       mam4::mo_setinv::setinv(team,                                    // in
                           invariants_icol,                         // out
                           atm.temperature, atm.vapor_mixing_ratio, // in
@@ -416,7 +426,7 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
     }
     // DIFFs: H2O2, H2SO4, SO2, DMS
     // no gll fields
-#if 0
+#if 1
     Kokkos::parallel_for(
     "MAMMicrophysics::run_impl::gas_phase_chemistry", policy,
     KOKKOS_LAMBDA(const ThreadTeam &team) {
@@ -688,6 +698,7 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
 
       // climatology data for linear stratospheric chemistry
       // ozone (climatology) [vmr]
+#if 0
       view_2d linoz_o3_clim =  buffer_.scratch[0];
       // column o3 above box (climatology) [Dobson Units (DU)]
       view_2d linoz_o3col_clim = buffer_.scratch[1];
@@ -711,6 +722,51 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
        log (ss.str());
        m_atm_logger->flush();
       }
+#endif
+      const auto& linoz_conf=config.linoz;
+      const int o3_ndx = static_cast<int>(mam4::GasId::O3);
+
+      view_2d linoz_o3_clim = get_field_out("o3_clim").get_view<Real **>();
+      view_2d linoz_o3col_clim = get_field_out("o3col_clim").get_view<Real **>();
+      view_2d linoz_t_clim = get_field_out("t_clim").get_view<Real **>();
+      view_2d linoz_PmL_clim = get_field_out("PmL_clim").get_view<Real **>();
+      view_2d linoz_dPmL_dO3 = get_field_out("dPmL_dO3").get_view<Real **>();
+      view_2d linoz_dPmL_dT = get_field_out("dPmL_dT").get_view<Real **>();
+      view_2d linoz_dPmL_dO3col = get_field_out("dPmL_dO3col").get_view<Real **>();
+      view_2d linoz_cariolle_pscs = get_field_out("cariolle_pscs").get_view<Real **>();
+      std::stringstream ss;
+      scream::impl::compute_and_print_hash(linoz_o3_clim, "linoz_o3_clim", 0, 0, ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
+      scream::impl::compute_and_print_hash(linoz_o3col_clim, "linoz_o3col_clim", 0, 0, ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
+      scream::impl::compute_and_print_hash(linoz_t_clim, "linoz_t_clim", 0, 0, ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
+      scream::impl::compute_and_print_hash(linoz_PmL_clim, "linoz_PmL_clim", 0, 0, ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
+      scream::impl::compute_and_print_hash(linoz_dPmL_dO3, "linoz_dPmL_dO3", 0, 0, ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
+      scream::impl::compute_and_print_hash(linoz_dPmL_dT, "linoz_dPmL_dT", 0, 0, ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
+      scream::impl::compute_and_print_hash(linoz_dPmL_dO3col, "linoz_dPmL_dO3col", 0, 0, ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
+      scream::impl::compute_and_print_hash(linoz_cariolle_pscs, "linoz_cariolle_pscs", 0, 0, ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
       scream::impl::compute_and_print_hash(dry_atm.T_mid, "dry_atm.T_mid",0,0,ss);
       log (ss.str());
       m_atm_logger->flush();

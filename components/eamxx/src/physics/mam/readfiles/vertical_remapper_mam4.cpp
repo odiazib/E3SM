@@ -55,6 +55,7 @@ void VerticalRemapperMAM4::
 apply_vertical_interpolation(const Field& f_src, const Field& f_tgt,
                              const Field& p_src, const Field& p_tgt) const
 {
+  using TPF = ekat::TeamPolicyFactory<KT::ExeSpace>;
   const auto p_tgt_c = p_tgt.get_view<const Real **>();
   const auto datain = f_src.get_view<Real **>();
   const auto dataout =  f_tgt.get_view<Real **>();
@@ -67,7 +68,7 @@ apply_vertical_interpolation(const Field& f_src, const Field& f_tgt,
   const int levsiz = f_src_l.dims().back();
 
   const auto policy =
-      ekat::ExeSpaceUtils<KT::ExeSpace>::get_default_team_policy(ncols, nlevs_tgt);
+      TPF::get_default_team_policy(ncols, nlevs_tgt);
   using Team = Kokkos::TeamPolicy<KT::ExeSpace>::member_type;
   if (m_vremap_type== MAM4_PSRef) {
 

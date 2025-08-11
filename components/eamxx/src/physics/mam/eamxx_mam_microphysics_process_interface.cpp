@@ -12,8 +12,7 @@
 
 // #include "helper_hash.cpp"
 #define MICRO_SMALL_KERNELS
-// #define MICRO_SMALL_KERNELS
-#define MICRO_SMALL_KERNELS
+
 #include <physics/mam/eamxx_mam_microphysics_process_functions.cpp>
 
 namespace scream {
