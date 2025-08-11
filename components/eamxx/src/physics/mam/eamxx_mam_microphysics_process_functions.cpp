@@ -1,6 +1,6 @@
 #include <mam4xx/mam4.hpp>
 #include <physics/mam/eamxx_mam_microphysics_process_interface.hpp>
-
+#include <physics/mam/helper_hash.cpp>
 namespace scream {
 
 void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const double eccf)
@@ -213,6 +213,7 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
     const auto &nevapr = get_field_in("nevapr").get_view<const Real **>();
 
     // set sethet
+#if 1
     Kokkos::parallel_for(
       "MAMMicrophysics::run_impl::sethet", policy,
       KOKKOS_LAMBDA(const ThreadTeam &team) {
@@ -237,7 +238,9 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
                           nevapr_icol, dt, invariants_icol, vmr_icol,
                           work_sethet_call);
   });
-
+# else
+  Kokkos::deep_copy(het_rates, 0.0);
+#endif
   // set_het end
 
   // set drydep_xactive
@@ -360,8 +363,6 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
       const auto qq_icol = ekat::subview(qq,icol);
       const auto qq_sfc = ekat::subview(qq_icol,surface_lev);
 
-
-
       Kokkos::parallel_for(
        Kokkos::TeamVectorRange(team, nlev),
        [&](const int kk) {
@@ -413,7 +414,9 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
     if (extra_mam4_aero_microphys_diags_) {
       gas_phase_chemistry_dvmrdt = get_field_out("mam4_microphysics_tendency_gas_phase_chemistry").get_view<Real ***>();
     }
-
+    // DIFFs: H2O2, H2SO4, SO2, DMS
+    // no gll fields
+#if 0
     Kokkos::parallel_for(
     "MAMMicrophysics::run_impl::gas_phase_chemistry", policy,
     KOKKOS_LAMBDA(const ThreadTeam &team) {
@@ -444,7 +447,7 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
       });
 
     });
-
+#endif
     if (gas_phase_chemistry_dvmrdt.size()) {
 
     Kokkos::parallel_for(
@@ -479,7 +482,7 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
   const auto& config_setsox = config.setsox;
   const auto& dqdt_aqso4 = dqdt_aqso4_;
   const auto& dqdt_aqh2so4 = dqdt_aqh2so4_;
-
+#if 1
   Kokkos::parallel_for(
     "MAMMicrophysics::run_impl::setsox_single_level", policy,
     KOKKOS_LAMBDA(const ThreadTeam &team) {
@@ -525,7 +528,7 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
         dqdt_aqso4_k.data(), dqdt_aqh2so4_k.data(), vmrcw_k.data(), vmr_k.data());
     });
     });
-
+#endif
     view_3d aqueous_chemistry_dvmrdt;
     if (extra_mam4_aero_microphys_diags_) {
       aqueous_chemistry_dvmrdt = get_field_out("mam4_microphysics_tendency_aqueous_chemistry").get_view<Real ***>();
@@ -592,7 +595,7 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
     }
 
     const bool extra_mam4_aero_microphys_diags  = extra_mam4_aero_microphys_diags_;
-
+#if 1
     const auto& config_amicphys = config.amicphys;
      Kokkos::parallel_for(
     "MAMMicrophysics::run_impl::modal_aero_amicphys_intr", policy,
@@ -659,7 +662,7 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
         vmr0_kk, vmr_pregas_kk, vmr_precld_kk, dgncur_a_kk, dgncur_awet_kk, wetdens_kk);
       });
     });
-
+#endif
     // modal_aero_amicphys_intr ends
 
     // vmr2mmr_cw
@@ -679,7 +682,7 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
        });
     });
     // vmr2mmr_cw ends
-
+#if 1
     // linoz
     if (config.linoz.compute) {
 
@@ -702,6 +705,37 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
       view_2d linoz_cariolle_pscs = buffer_.scratch[7];
       const auto& linoz_conf=config.linoz;
       const int o3_ndx = static_cast<int>(mam4::GasId::O3);
+      std::stringstream ss;
+      for (int i = 0; i < 9; ++i) {
+       scream::impl::compute_and_print_hash(buffer_.scratch[i], "buffer_.scratch",i,0,ss);
+       log (ss.str());
+       m_atm_logger->flush();
+      }
+      scream::impl::compute_and_print_hash(dry_atm.T_mid, "dry_atm.T_mid",0,0,ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
+
+      scream::impl::compute_and_print_hash(dry_atm.p_del, "dry_atm.p_del",0,0,ss);
+      log (ss.str());
+      m_atm_logger->flush();
+      scream::impl::compute_and_print_hash(dry_atm.p_mid, "dry_atm.p_mid",0,0,ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
+      // // for (int i = 0; i < mam_coupling::gas_pcnst(); ++i) {
+      auto vmr_i = Kokkos::subview(vmr,Kokkos::ALL,Kokkos::ALL,o3_ndx);
+      scream::impl::compute_and_print_hash(vmr_i, "before_vmr_o3",0,0, ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
+
+      scream::impl::compute_and_print_hash(o3_col_dens, "o3_col_dens",0,0, ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
+      // }
+
       Kokkos::parallel_for(
     "MAMMicrophysics::run_impl::linoz", policy,
     KOKKOS_LAMBDA(const ThreadTeam &team) {
@@ -778,7 +812,13 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
         });
         });
 
+      // const auto& vmr_i = Kokkos::subview(vmr,Kokkos::ALL,Kokkos::ALL,o3_ndx);
+      scream::impl::compute_and_print_hash(vmr_i, "after_vmr_o3",0,0,ss);
+      log (ss.str());
+      m_atm_logger->flush();
+
     }
+#endif
     // linoz ends
     Kokkos::parallel_for(
     "MAMMicrophysics::run_impl::inject_to_progs", policy,

@@ -499,7 +499,7 @@ void MAMAci::initialize_impl(const RunType run_type) {
 // ================================================================
 void MAMAci::run_impl(const double dt) {
   using TPF = ekat::TeamPolicyFactory<KT::ExeSpace>;
-
+  Kokkos::deep_copy(ccn_,0.0);
   const auto scan_policy = TPF::get_thread_range_parallel_scan_team_policy(ncol_, nlev_);
 
   // preprocess input -- needs a scan for the calculation of local derivied
