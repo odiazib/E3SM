@@ -2,7 +2,7 @@
 #include <physics/mam/eamxx_mam_microphysics_process_interface.hpp>
 #include <physics/mam/helper_hash.cpp>
 namespace scream {
-
+#if defined(MICRO_SMALL_KERNELS)
 void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const double eccf)
 {
    using TPF = ekat::TeamPolicyFactory<KT::ExeSpace>;
@@ -984,5 +984,5 @@ void MAMMicrophysics::run_small_kernels_microphysics(const double dt, const doub
 
 
 }//run_small_kernels_microphysics
-
+#endif
 }  // namespace scream

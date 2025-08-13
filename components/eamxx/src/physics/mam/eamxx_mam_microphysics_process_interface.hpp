@@ -119,7 +119,6 @@ class MAMMicrophysics final : public MAMGenericInterface {
   mam_coupling::TracerData tracer_data_;
   // view_3d invariants_;
   std::string oxid_file_name_;
-  view_2d cnst_offline_[4];
 #else
   // data interpolation object for oxi invariants
   std::shared_ptr<DataInterpolation>    data_interp_oxid_;
@@ -131,6 +130,7 @@ class MAMMicrophysics final : public MAMGenericInterface {
   view_3d invariants_;
   std::vector<std::string> var_names_linoz_;
   std::vector<std::string> var_names_oxi_;
+  view_2d cnst_offline_[4];
   // linoz reader
 #ifdef USE_OLD_LINOZ_FILE_READ
   mam_coupling::TracerTimeState linoz_time_state_;

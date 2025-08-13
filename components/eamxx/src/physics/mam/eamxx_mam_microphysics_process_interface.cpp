@@ -11,7 +11,7 @@
 #include <ekat_team_policy_utils.hpp>
 
 // #include "helper_hash.cpp"
-#define MICRO_SMALL_KERNELS
+// #define MICRO_SMALL_KERNELS
 
 #include <physics/mam/eamxx_mam_microphysics_process_functions.cpp>
 
@@ -1093,9 +1093,10 @@ void MAMMicrophysics::run_impl(const double dt) {
 
 
   const auto &invariants   = invariants_;
-
-
+#ifdef USE_OLD_LINOZ_FILE_READ
   const auto &cnst_offline = cnst_offline_;
+#endif
+
 #endif
   // Compute orbital parameters; these are used both for computing
   // the solar zenith angle.
