@@ -117,7 +117,7 @@ class MAMMicrophysics final : public MAMGenericInterface {
   void set_linoz_reader();
   view_3d invariants_;
   std::shared_ptr<DataInterpolation>    data_interp_exo_coldens_;
-  std::vector<std::string> exo_coldens_names_;
+  std::vector<Field> exo_coldens_fields_;
   void set_exo_coldens_reader();
   // Vertical emission uses 9 files, here I am using std::vector to stote
   // instance of each file.

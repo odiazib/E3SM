@@ -308,12 +308,6 @@ MAMMicrophysics::set_grids(const std::shared_ptr<const GridsManager> grids_manag
     mam_coupling::find_season_index_reader(season_wes_file, clat,
                                            index_season_lai_);
   }
-  {
-    exo_coldens_names_={"O3_column_density"};
-    for(const auto &field_name : exo_coldens_names_) {
-      add_field<Computed>(field_name, scalar3d_mid, nondim, grid_name);
-    }
-  }
 
 }  // set_grids
 
@@ -480,14 +474,21 @@ void MAMMicrophysics::set_exo_coldens_reader()
   const std::string exo_coldens_map_file =
         m_params.get<std::string>("aero_microphys_remap_file", "");
   // get fields from FM.
-  std::vector<Field> exo_coldens_fields;
-  for(const auto &field_name : exo_coldens_names_) {
-      exo_coldens_fields.push_back(get_field_out(field_name));
+  auto grid_exo_coldens = grid_->clone("exo_grid",true);
+  grid_exo_coldens->reset_num_vertical_lev(1);
+  auto layout = grid_exo_coldens->get_3d_scalar_layout(true);
+  // FIXME: units are wrong.
+  auto mbar = ekat::units::Units(100*ekat::units::Pa,"mbar");
+  std::vector<std::string> exo_coldens_names={"O3_column_density"};
+  for(const auto &field_name : exo_coldens_names) {
+      Field field_exo(FieldIdentifier(field_name,layout,mbar,grid_exo_coldens->name()));
+      field_exo.allocate_view();
+      exo_coldens_fields_.push_back(field_exo);
   }
 
   // Beg of any year, since we use yearly periodic timeline
   util::TimeStamp ref_ts_oxid (1,1,1,0,0,0);
-  data_interp_exo_coldens_ = std::make_shared<DataInterpolation>(grid_,exo_coldens_fields);
+  data_interp_exo_coldens_ = std::make_shared<DataInterpolation>(grid_exo_coldens,exo_coldens_fields_);
   data_interp_exo_coldens_->setup_time_database ({exo_coldens_file_name},util::TimeLine::YearlyPeriodic, ref_ts_oxid);
   data_interp_exo_coldens_->create_horiz_remappers (exo_coldens_map_file=="none" ? "" : exo_coldens_map_file);
   data_interp_exo_coldens_->set_logger(m_atm_logger);
@@ -495,12 +496,10 @@ void MAMMicrophysics::set_exo_coldens_reader()
   remap_exo_coldens.vr_type = DataInterpolation::Custom;
   // We are using a custom remapper that invokes the MAM4XX routine
   // for vertical interpolation.
-  // The type used is VertRemapType::MAM4_PSRef.
   auto grid_after_hremap = data_interp_exo_coldens_->get_grid_after_hremap();
-  auto vertical_remapper= std::make_shared<VerticalRemapperExoColdensMAM4>(grid_after_hremap, grid_);
+  auto vertical_remapper= std::make_shared<VerticalRemapperExoColdensMAM4>(grid_after_hremap, grid_exo_coldens);
   vertical_remapper->set_delta_pressure(exo_coldens_file_name, pint);
   remap_exo_coldens.custom_remapper=vertical_remapper;
-  remap_exo_coldens.pmid = pint;
 
   data_interp_exo_coldens_->create_vert_remapper (remap_exo_coldens);
   data_interp_exo_coldens_->init_data_interval (start_of_step_ts());
@@ -841,6 +840,10 @@ void MAMMicrophysics::run_impl(const double dt) {
   }
 
   data_interp_exo_coldens_->run(end_of_step_ts());
+  // NOTE: we only have one field
+  // exo absorber columns [molecules/cm^2]
+  const auto spc_exo_col = exo_coldens_fields_[0].get_view<Real**>();
+
 
   // it's a bit wasteful to store this for all columns, but simpler from an
   // allocation perspective
