@@ -470,7 +470,7 @@ void MAMMicrophysics::set_exo_coldens_reader()
 {
   const auto pint = get_field_in("p_int");
   // Oxid fields read initialization
-  const std::string exo_coldens_file_name = m_params.get<std::string>("mam4_exo_coldens_name");
+  const std::string exo_coldens_file_name = m_params.get<std::string>("mam4_exo_coldens_file_name");
   const std::string exo_coldens_map_file =
         m_params.get<std::string>("aero_microphys_remap_file", "");
   // get fields from FM.
@@ -842,7 +842,7 @@ void MAMMicrophysics::run_impl(const double dt) {
   data_interp_exo_coldens_->run(end_of_step_ts());
   // NOTE: we only have one field
   // exo absorber columns [molecules/cm^2]
-  const auto spc_exo_col = exo_coldens_fields_[0].get_view<Real**>();
+  const auto o3_exo_col = exo_coldens_fields_[0].get_view<Real**>();
 
 
   // it's a bit wasteful to store this for all columns, but simpler from an
@@ -957,7 +957,6 @@ void MAMMicrophysics::run_impl(const double dt) {
   //NOTE: we need to initialize photo_rates_
   Kokkos::deep_copy(photo_rates_,0.0);
   // loop over atmosphere columns and compute aerosol microphysics
-  Real o3_col_deltas_0=0.0;
   Kokkos::parallel_for(
       "MAMMicrophysics::run_impl", policy,
       KOKKOS_LAMBDA(const ThreadTeam &team) {
@@ -966,6 +965,8 @@ void MAMMicrophysics::run_impl(const double dt) {
 
         // convert column latitude to radians
         const Real rlats = col_lat * M_PI / 180.0;
+
+        const Real o3_col_deltas_0 = o3_exo_col(icol,0);
 
         // fetch column-specific atmosphere state data
         const auto atm = mam_coupling::atmosphere_for_column(dry_atm, icol);
@@ -1106,7 +1107,7 @@ void MAMMicrophysics::run_impl(const double dt) {
             fraction_landuse_icol, index_season, clsmap_4, permute_4,
             offset_aerosol,
             dry_diameter_icol, wet_diameter_icol,
-            wetdens_icol, dry_atm.phis(icol), cmfdqr, prain_icol, nevapr_icol,o3_col_deltas_0,
+            wetdens_icol, dry_atm.phis(icol), cmfdqr, prain_icol, nevapr_icol, o3_col_deltas_0,
             work_set_het_icol, drydep_data, diag_arrays, dvel_col, dflx_col, progs);
 
         team.team_barrier();
