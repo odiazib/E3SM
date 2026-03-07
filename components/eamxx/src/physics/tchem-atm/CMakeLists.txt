@@ -40,10 +40,10 @@ endif()
 # endif()
 
 # TChem-atm external package
-if (NOT SUNDIALS_INSTALL_PATH)
-  set(SUNDIALS_INSTALL_PATH "/pscratch/sd/o/odiazib/e3sm-tchem/TChem-atm/scripts/CUDA/install/sundials" CACHE PATH "Path to Sundials installation")
-endif()
-
+# if (NOT SUNDIALS_INSTALL_PATH)
+#   set(SUNDIALS_INSTALL_PATH "/pscratch/sd/o/odiazib/e3sm-tchem/TChem-atm/scripts/CUDA/install/sundials" CACHE PATH "Path to Sundials installation")
+# endif()
+set(TCHEM_ATM_ENABLE_SUNDIALS OFF CACHE BOOL "Disable TChem-atm tests within E3SM" FORCE)
 set(TCHEM_ATM_ENABLE_TEST OFF CACHE BOOL "Disable TChem-atm tests within E3SM" FORCE)
 set(TCHEM_ATM_ENABLE_EXAMPLE OFF CACHE BOOL "Disable TChem-atm examples within E3SM" FORCE)
 set(TCHEM_ATM_ENABLE_SKYWALKER OFF CACHE BOOL "Disable TChem-atm skywalker within E3SM" FORCE)
