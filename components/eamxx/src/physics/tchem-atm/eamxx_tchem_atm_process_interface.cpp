@@ -62,6 +62,30 @@ void fill_state_column_from_field(const StateViewType& state,
       });
     }
 
+template <typename DestViewType, typename StateViewType, typename QvViewType>
+void fill_wet_mmr_field_from_state_column(const DestViewType& dst,
+                                          const StateViewType& state,
+                                          const QvViewType& qv,
+                                          const int nlevs,
+                                          const int nbatch,
+                                          const int state_col,
+                                          const Real species_mw,
+                                          const char* kernel_name) {
+  using PF = scream::PhysicsFunctions<DefaultDevice>;
+  constexpr Real air_mw = scream::physics::Constants<Real>::MWdry.value;
+  Kokkos::parallel_for(
+      kernel_name, Kokkos::RangePolicy<TChem::exec_space>(0, nbatch),
+      KOKKOS_LAMBDA(const int i) {
+        const int icol = i / nlevs;
+        const int ilev = i % nlevs;
+        const Real qv_wet = qv(icol, ilev);
+        const Real vmr_dry = state(i, state_col);
+        const Real mmr_dry = vmr_dry * species_mw / air_mw;
+        const Real qv_dry = PF::calculate_drymmr_from_wetmmr(qv_wet, qv_wet);
+        dst(icol, ilev) = PF::calculate_wetmmr_from_drymmr(mmr_dry, qv_dry);
+      });
+}
+
 }  // namespace
 
 TChemATM::TChemATM(const ekat::Comm& comm, const ekat::ParameterList& params)
@@ -188,23 +212,23 @@ void TChemATM::run_impl(const double dt) {
       m_dt_view, m_state,
       m_kmcd);
 
-  // After the TChem run, copy the updated tracer values back to the EAMxx physics fields.
-  //FIXME: state is in vmr dry, we need to convert back to wet mmr before copying back to physics fields. 
-  // step 1. get mmr from vmr
-  // const Real mmr_dry =
-  //          mam4::conversions::mmr_from_vmr(vmr_ispec(icol, kk), mw_ispec);
-  // step 2. get wet mmr from dry mmr and qv
-  //      mmr_ispec(icol, kk) =
-  //          PF::calculate_wetmmr_from_drymmr(mmr_dry_ispec, qv_dry(icol, kk));
-  // where:
-  //qv_dry(icol, kk) =
-  //      PF::calculate_drymmr_from_wetmmr(qv(icol, kk), qv(icol, kk));
+  // After the TChem run, convert dry-vmr state back to wet-mmr tracer fields.
   for (int ivar = 0; ivar < m_kmd.nSpec_; ++ivar) {
     const auto& tracer_name = std::string(&species_names_host(ivar, 0));
     const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
-    fill_field_from_state_column(q_tracer, state, nlevs, m_nbatch, ivar + 3,
-                                 "tchem_copy_back_state_tracer");
+    fill_wet_mmr_field_from_state_column(q_tracer, state, qv, nlevs, m_nbatch,
+                                         ivar + 3, m_species_mw[ivar],
+                                         "tchem_copy_back_state_tracer");
   } 
+
+  //TODO:
+  // modify TChem-atm functions signature to pass tem and pressure
+  // get initialization condition files with all tracer for uci
+  // get mw from uci yaml file. 
+  // run test with traces.
+  // Future:
+  // connect to aerosols. 
+  
 }
 
 }  // namespace scream
