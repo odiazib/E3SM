@@ -50,6 +50,9 @@
 #ifdef EAMXX_HAS_CLD_FRAC_NET
 #include "physics/cld_fraction/cld_frac_net/eamxx_cld_frac_net_process_interface.hpp"
 #endif
+#ifdef EAMXX_HAS_TCHEM_ATM
+#include "physics/tchem-atm/eamxx_tchem_atm_process_interface.hpp"
+#endif
 
 namespace scream {
 
@@ -99,6 +102,9 @@ inline void register_physics () {
 #endif
 #ifdef EAMXX_HAS_CLD_FRAC_NET
   proc_factory.register_product("cld_frac_net",&create_atmosphere_process<CldFracNet>);
+#endif
+#ifdef EAMXX_HAS_TCHEM_ATM
+  proc_factory.register_product("tchem_atm",&create_atmosphere_process<TChemATM>);
 #endif
 
   // If no physics was enabled, silence compile warning about unused var
