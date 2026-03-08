@@ -38,6 +38,8 @@ class TChemATM : public AtmosphereProcess {
   explicit_euler_type::real_type_1d_view_type m_t;
   explicit_euler_type::real_type_1d_view_type m_dt_view;
   TChem::time_advance_type_1d_view m_tadv;
+  int m_ncols = 0;
+  int m_nlevs = 0;
   int m_nbatch = 0;
   TChem::ordinal_type m_n_active_vars = 0;
   TChem::ordinal_type m_state_vec_dim = 0;
