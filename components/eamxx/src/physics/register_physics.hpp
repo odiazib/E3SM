@@ -59,6 +59,9 @@
 #ifdef EAMXX_HAS_WATER_ISOTOPES
 #include "physics/specialized_tracers/water_isotopes/eamxx_water_isotopes_process_interface.hpp"
 #endif
+#ifdef EAMXX_HAS_TCHEM_ATM
+#include "physics/tchem-atm/eamxx_tchem_atm_process_interface.hpp"
+#endif
 
 namespace scream {
 
@@ -117,6 +120,9 @@ inline void register_physics () {
 #endif
 #ifdef EAMXX_HAS_WATER_ISOTOPES
   proc_factory.register_product("water_isotopes",&create_atmosphere_process<WaterIsotopes>);
+#endif
+#ifdef EAMXX_HAS_TCHEM_ATM
+  proc_factory.register_product("tchem_atm",&create_atmosphere_process<TChemATM>);
 #endif
 
   // If no physics was enabled, silence compile warning about unused var
