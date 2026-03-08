@@ -4,6 +4,42 @@
 
 namespace scream {
 
+namespace {
+
+template <typename StateViewType, typename SourceViewType>
+void fill_state_column_from_field(const StateViewType& state,
+                                  const SourceViewType& src,
+                                  const int nlevs,
+                                  const int nbatch,
+                                  const int state_col,
+                                  const char* kernel_name) {
+  Kokkos::parallel_for(
+      kernel_name, Kokkos::RangePolicy<TChem::exec_space>(0, nbatch),
+      KOKKOS_LAMBDA(const int i) {
+        const int icol = i / nlevs;
+        const int ilev = i % nlevs;
+        state(i, state_col) = src(icol, ilev);
+      });
+}
+
+    template <typename DestViewType, typename StateViewType>
+    void fill_field_from_state_column(const DestViewType& dst,
+                  const StateViewType& state,
+                  const int nlevs,
+                  const int nbatch,
+                  const int state_col,
+                  const char* kernel_name) {
+      Kokkos::parallel_for(
+      kernel_name, Kokkos::RangePolicy<TChem::exec_space>(0, nbatch),
+      KOKKOS_LAMBDA(const int i) {
+        const int icol = i / nlevs;
+        const int ilev = i % nlevs;
+        dst(icol, ilev) = state(i, state_col);
+      });
+    }
+
+}  // namespace
+
 TChemATM::TChemATM(const ekat::Comm& comm, const ekat::ParameterList& params)
     : AtmosphereProcess(comm, params) {}
 
@@ -19,6 +55,12 @@ void TChemATM::create_requests() {
       "chem_file", m_params.get<std::string>("chemfile", ""));
   EKAT_REQUIRE_MSG(!chem_file.empty(),
                    "Error! Missing required parameter 'chem_file' for tchem_atm.\n");
+
+  const auto& grid_name = m_grid->name();
+  const auto scalar3d_mid = m_grid->get_3d_scalar_layout(true);
+  add_field<Required>("p_mid", scalar3d_mid, Pa, grid_name);
+  add_field<Required>("T_mid", scalar3d_mid, K, grid_name);
+
   // Build TChem kinetic model metadata from the configured chemistry file.
   m_kmd = TChem::KineticModelData(chem_file);
   m_kmcd = TChem::createNCAR_KineticModelConstData<tchem_device_type>(m_kmd);
@@ -34,7 +76,9 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   EKAT_REQUIRE_MSG(m_tchem_ready,
                    "Error! TChemATM::initialize_impl called before TChem model initialization.\n");
 
-  m_nbatch = m_grid->get_num_local_dofs();
+  m_ncols = m_grid->get_num_local_dofs();
+  m_nlevs = m_grid->get_num_vertical_levels();
+  m_nbatch = m_ncols * m_nlevs;
   if (m_nbatch == 0) {
     return;
   }
@@ -66,6 +110,11 @@ void TChemATM::run_impl(const double dt) {
     return;
   }
 
+  const auto t_mid = get_field_in("T_mid").get_view<const Real **>();
+  const auto p_mid = get_field_in("p_mid").get_view<const Real **>();
+  const int nlevs = m_nlevs;
+  const auto state = m_state;
+
   using policy_type = typename TChem::UseThisTeamPolicy<TChem::exec_space>::type;
 
   policy_type policy(TChem::exec_space(), m_nbatch, Kokkos::AUTO());
@@ -74,11 +123,10 @@ void TChemATM::run_impl(const double dt) {
       TChem::Scratch<TChem::real_type_1d_view>::shmem_size(per_team_extent);
   policy.set_scratch_size(1, Kokkos::PerTeam(per_team_scratch));
 
-  Kokkos::deep_copy(m_state, TChem::real_type(0));
-  Kokkos::deep_copy(m_photo_rates, TChem::real_type(0));
-  Kokkos::deep_copy(m_external_sources, TChem::real_type(0));
-  Kokkos::deep_copy(m_t, TChem::real_type(0));
-  Kokkos::deep_copy(m_dt_view, TChem::real_type(dt));
+  Kokkos::deep_copy(m_photo_rates, 0.0);
+  Kokkos::deep_copy(m_external_sources, 0.0);
+  Kokkos::deep_copy(m_t, 0.0);
+  Kokkos::deep_copy(m_dt_view, dt);
 
   TChem::time_advance_type tadv_default;
   tadv_default._tbeg = 0;
@@ -91,19 +139,39 @@ void TChemATM::run_impl(const double dt) {
   tadv_default._jacobian_interval = 1;
   Kokkos::deep_copy(m_tadv, tadv_default);
 
-  // Placeholder thermodynamic state until EAMxx fields are wired in.
-  Kokkos::parallel_for(
-      "tchem_init_state", Kokkos::RangePolicy<TChem::exec_space>(0, m_nbatch),
-      KOKKOS_LAMBDA(const int i) {
-        m_state(i, 1) = TChem::real_type(101325.0); // pressure [Pa]
-        m_state(i, 2) = TChem::real_type(300.0);    // temperature [K]
-      });
+  // Populate TChem state pressure/temperature from EAMxx physics fields.
+  fill_state_column_from_field(state, p_mid, nlevs, m_nbatch, 1,
+                               "tchem_init_state_p");
+  fill_state_column_from_field(state, t_mid, nlevs, m_nbatch, 2,
+                               "tchem_init_state_t");
+
+  const auto species_names_host = m_kmd.sNames_.view_host();
+  for (int ivar = 0; ivar < m_kmd.nSpec_; ++ivar) {
+    const auto& tracer_name = std::string(&species_names_host(ivar, 0));
+    const auto& q_tracer = get_field_in(tracer_name).get_view< Real **>();
+    //FIXME:
+    //q_tracer from eamxx are mmr wet base, but TChem-atm expects vmr dry base. 
+    // step 1. compute mmr dry base from mmr wet base and qv
+    //const Real mmr_ispe_dry =
+    //    PF::calculate_drymmr_from_wetmmr(mmr_igas(icol,kk), qv(icol, kk));
+    // step 2. compute vmr dry base from mmr dry base
+    //    state(ibacth, ispec) =  mam4::conversions::vmr_from_mmr(mmr_ispe_dry,mw_ispe);
+    fill_state_column_from_field(state, q_tracer, nlevs, m_nbatch, ivar + 3,
+                                 "tchem_init_state_tracer");
+  }
 
   TChem::AtmosphericChemistryE3SM_ExplicitEuler::runDeviceBatch(
       policy, m_tadv, m_state, m_photo_rates, m_external_sources, m_t,
       m_dt_view, m_state,
       m_kmcd);
-  TChem::exec_space().fence();
+
+  // After the TChem run, copy the updated tracer values back to the EAMxx physics fields.
+  for (int ivar = 0; ivar < m_kmd.nSpec_; ++ivar) {
+    const auto& tracer_name = std::string(&species_names_host(ivar, 0));
+    const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
+    fill_field_from_state_column(q_tracer, state, nlevs, m_nbatch, ivar + 3,
+                                 "tchem_copy_back_state_tracer");
+  } 
 }
 
 }  // namespace scream
