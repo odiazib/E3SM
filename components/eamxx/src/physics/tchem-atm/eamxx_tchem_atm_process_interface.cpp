@@ -11,7 +11,7 @@ void TChemATM::create_requests() {
   using namespace ekat::units;
   constexpr auto q_unit = kg / kg;
 
-  const auto m_grid = m_grids_manager->get_grid("physics");
+  m_grid = m_grids_manager->get_grid("physics");
   EKAT_REQUIRE_MSG(m_grid != nullptr,
                    "Error! TChemATM could not get 'physics' grid.\n");
 
@@ -19,23 +19,36 @@ void TChemATM::create_requests() {
       "chem_file", m_params.get<std::string>("chemfile", ""));
   EKAT_REQUIRE_MSG(!chem_file.empty(),
                    "Error! Missing required parameter 'chem_file' for tchem_atm.\n");
-
-  using device_type = typename Tines::UseThisDevice<TChem::exec_space>::type;
-
   // Build TChem kinetic model metadata from the configured chemistry file.
-  TChem::KineticModelData kmd(chem_file);
-  const auto kmcd = TChem::createNCAR_KineticModelConstData<device_type>(kmd);
+  m_kmd = TChem::KineticModelData(chem_file);
+  m_kmcd = TChem::createNCAR_KineticModelConstData<tchem_device_type>(m_kmd);
+  m_tchem_ready = true;
 
-  const auto species_names_host = kmd.sNames_.view_host();
-  for (int i = 0; i < kmd.nSpec_; ++i) {
+  const auto species_names_host = m_kmd.sNames_.view_host();
+  for (int i = 0; i < m_kmd.nSpec_; ++i) {
     add_tracer<Updated>(std::string(&species_names_host(i, 0)), m_grid, q_unit);
   }
-
-  // Keep kmcd creation for upcoming tchem-atm integration work.
-  // (void)kmcd;
 }
 
-void TChemATM::initialize_impl(const RunType /* run_type */) {}
+void TChemATM::initialize_impl(const RunType /* run_type */) {
+  EKAT_REQUIRE_MSG(m_tchem_ready,
+                   "Error! TChemATM::initialize_impl called before TChem model initialization.\n");
+
+  m_nbatch = m_grid->get_num_local_dofs();
+  if (m_nbatch == 0) {
+    return;
+  }
+
+  m_n_active_vars = m_kmcd.nSpec - m_kmcd.nConstSpec;
+  m_state_vec_dim = TChem::Impl::getStateVectorSize(m_kmcd.nSpec);
+
+  m_state = explicit_euler_type::real_type_2d_view_type("tchem_state", m_nbatch, m_state_vec_dim);
+  m_photo_rates = explicit_euler_type::real_type_2d_view_type("tchem_photo_rates", m_nbatch, m_kmcd.nReac);
+  m_external_sources = explicit_euler_type::real_type_2d_view_type("tchem_external_sources", m_nbatch, m_n_active_vars);
+  m_t = explicit_euler_type::real_type_1d_view_type("tchem_time", m_nbatch);
+  m_dt_view = explicit_euler_type::real_type_1d_view_type("tchem_dt", m_nbatch);
+  m_tadv = TChem::time_advance_type_1d_view("tchem_tadv", m_nbatch);
+}
 
 int TChemATM::get_len_temporary_views() {
   return 0;
@@ -43,6 +56,54 @@ int TChemATM::get_len_temporary_views() {
 
 void TChemATM::init_temporary_views() {}
 
-void TChemATM::run_impl(const double /* dt */) {}
+void TChemATM::run_impl(const double dt) {
+  EKAT_REQUIRE_MSG(m_tchem_ready,
+                   "Error! TChemATM::run_impl called before TChem model initialization.\n");
+
+  using ordinal_type = TChem::ordinal_type;
+
+  if (m_nbatch == 0) {
+    return;
+  }
+
+  using policy_type = typename TChem::UseThisTeamPolicy<TChem::exec_space>::type;
+
+  policy_type policy(TChem::exec_space(), m_nbatch, Kokkos::AUTO());
+  const ordinal_type per_team_extent = explicit_euler_type::getWorkSpaceSize(m_kmcd);
+  const ordinal_type per_team_scratch =
+      TChem::Scratch<TChem::real_type_1d_view>::shmem_size(per_team_extent);
+  policy.set_scratch_size(1, Kokkos::PerTeam(per_team_scratch));
+
+  Kokkos::deep_copy(m_state, TChem::real_type(0));
+  Kokkos::deep_copy(m_photo_rates, TChem::real_type(0));
+  Kokkos::deep_copy(m_external_sources, TChem::real_type(0));
+  Kokkos::deep_copy(m_t, TChem::real_type(0));
+  Kokkos::deep_copy(m_dt_view, TChem::real_type(dt));
+
+  TChem::time_advance_type tadv_default;
+  tadv_default._tbeg = 0;
+  tadv_default._tend = dt;
+  tadv_default._dt = dt;
+  tadv_default._dtmin = dt;
+  tadv_default._dtmax = dt;
+  tadv_default._max_num_newton_iterations = 1;
+  tadv_default._num_time_iterations_per_interval = 1;
+  tadv_default._jacobian_interval = 1;
+  Kokkos::deep_copy(m_tadv, tadv_default);
+
+  // Placeholder thermodynamic state until EAMxx fields are wired in.
+  Kokkos::parallel_for(
+      "tchem_init_state", Kokkos::RangePolicy<TChem::exec_space>(0, m_nbatch),
+      KOKKOS_LAMBDA(const int i) {
+        m_state(i, 1) = TChem::real_type(101325.0); // pressure [Pa]
+        m_state(i, 2) = TChem::real_type(300.0);    // temperature [K]
+      });
+
+  TChem::AtmosphericChemistryE3SM_ExplicitEuler::runDeviceBatch(
+      policy, m_tadv, m_state, m_photo_rates, m_external_sources, m_t,
+      m_dt_view, m_state,
+      m_kmcd);
+  TChem::exec_space().fence();
+}
 
 }  // namespace scream
