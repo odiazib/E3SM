@@ -1,6 +1,7 @@
 #include "eamxx_tchem_atm_process_interface.hpp"
 
 #include <ekat_assert.hpp>
+#include "share/physics/eamxx_common_physics_functions.hpp"
 
 namespace scream {
 
@@ -21,6 +22,29 @@ void fill_state_column_from_field(const StateViewType& state,
         state(i, state_col) = src(icol, ilev);
       });
 }
+
+    template <typename StateViewType, typename TracerViewType, typename QvViewType>
+    void fill_state_column_from_wet_mmr_field(const StateViewType& state,
+                  const TracerViewType& q_tracer,
+                  const QvViewType& qv,
+                  const int nlevs,
+                  const int nbatch,
+                  const int state_col,
+                  const Real species_mw,
+                  const char* kernel_name) {
+      using PF = scream::PhysicsFunctions<DefaultDevice>;
+      constexpr Real air_mw = scream::physics::Constants<Real>::MWdry.value;
+      Kokkos::parallel_for(
+      kernel_name, Kokkos::RangePolicy<TChem::exec_space>(0, nbatch),
+      KOKKOS_LAMBDA(const int i) {
+        const int icol = i / nlevs;
+        const int ilev = i % nlevs;
+        const Real mmr_wet = q_tracer(icol, ilev);
+        const Real qv_wet = qv(icol, ilev);
+        const Real mmr_dry = PF::calculate_drymmr_from_wetmmr(mmr_wet, qv_wet);
+        state(i, state_col) = mmr_dry * air_mw / species_mw;
+      });
+    }
 
     template <typename DestViewType, typename StateViewType>
     void fill_field_from_state_column(const DestViewType& dst,
@@ -60,10 +84,14 @@ void TChemATM::create_requests() {
   const auto scalar3d_mid = m_grid->get_3d_scalar_layout(true);
   add_field<Required>("p_mid", scalar3d_mid, Pa, grid_name);
   add_field<Required>("T_mid", scalar3d_mid, K, grid_name);
+  add_field<Required>("qv", scalar3d_mid, q_unit, grid_name);
 
   // Build TChem kinetic model metadata from the configured chemistry file.
   m_kmd = TChem::KineticModelData(chem_file);
   m_kmcd = TChem::createNCAR_KineticModelConstData<tchem_device_type>(m_kmd);
+  m_species_mw = m_params.get<std::vector<Real>>("species_mw");
+  EKAT_REQUIRE_MSG(static_cast<int>(m_species_mw.size()) == m_kmd.nSpec_,
+                   "Error! Parameter 'species_mw' must have one molecular weight per TChem species.\n");
   m_tchem_ready = true;
 
   const auto species_names_host = m_kmd.sNames_.view_host();
@@ -112,6 +140,7 @@ void TChemATM::run_impl(const double dt) {
 
   const auto t_mid = get_field_in("T_mid").get_view<const Real **>();
   const auto p_mid = get_field_in("p_mid").get_view<const Real **>();
+  const auto qv = get_field_in("qv").get_view<const Real **>();
   const int nlevs = m_nlevs;
   const auto state = m_state;
 
@@ -149,15 +178,9 @@ void TChemATM::run_impl(const double dt) {
   for (int ivar = 0; ivar < m_kmd.nSpec_; ++ivar) {
     const auto& tracer_name = std::string(&species_names_host(ivar, 0));
     const auto& q_tracer = get_field_in(tracer_name).get_view< Real **>();
-    //FIXME:
-    //q_tracer from eamxx are mmr wet base, but TChem-atm expects vmr dry base. 
-    // step 1. compute mmr dry base from mmr wet base and qv
-    //const Real mmr_ispe_dry =
-    //    PF::calculate_drymmr_from_wetmmr(mmr_igas(icol,kk), qv(icol, kk));
-    // step 2. compute vmr dry base from mmr dry base
-    //    state(ibacth, ispec) =  mam4::conversions::vmr_from_mmr(mmr_ispe_dry,mw_ispe);
-    fill_state_column_from_field(state, q_tracer, nlevs, m_nbatch, ivar + 3,
-                                 "tchem_init_state_tracer");
+    fill_state_column_from_wet_mmr_field(state, q_tracer, qv, nlevs, m_nbatch,
+                                         ivar + 3, m_species_mw[ivar],
+                                         "tchem_init_state_tracer");
   }
 
   TChem::AtmosphericChemistryE3SM_ExplicitEuler::runDeviceBatch(
@@ -166,6 +189,16 @@ void TChemATM::run_impl(const double dt) {
       m_kmcd);
 
   // After the TChem run, copy the updated tracer values back to the EAMxx physics fields.
+  //FIXME: state is in vmr dry, we need to convert back to wet mmr before copying back to physics fields. 
+  // step 1. get mmr from vmr
+  // const Real mmr_dry =
+  //          mam4::conversions::mmr_from_vmr(vmr_ispec(icol, kk), mw_ispec);
+  // step 2. get wet mmr from dry mmr and qv
+  //      mmr_ispec(icol, kk) =
+  //          PF::calculate_wetmmr_from_drymmr(mmr_dry_ispec, qv_dry(icol, kk));
+  // where:
+  //qv_dry(icol, kk) =
+  //      PF::calculate_drymmr_from_wetmmr(qv(icol, kk), qv(icol, kk));
   for (int ivar = 0; ivar < m_kmd.nSpec_; ++ivar) {
     const auto& tracer_name = std::string(&species_names_host(ivar, 0));
     const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
