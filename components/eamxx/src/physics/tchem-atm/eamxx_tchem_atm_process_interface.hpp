@@ -20,7 +20,7 @@ class TChemATM : public AtmosphereProcess {
     return AtmosphereProcessType::Physics;
   }
 
- protected:
+//  protected:
   void initialize_impl(const RunType run_type) override;
   void run_impl(const double dt) override;
   void finalize_impl() override {}
