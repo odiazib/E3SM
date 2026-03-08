@@ -1,8 +1,9 @@
 #ifndef EAMXX_TCHEM_ATM_PROCESS_INTERFACE_HPP
 #define EAMXX_TCHEM_ATM_PROCESS_INTERFACE_HPP
-#include <tchem-atm/TChem.hpp>
-#include <string>
 #include "share/atm_process/atmosphere_process.hpp"
+#include <ekat_parameter_list.hpp>
+#include <TChem.hpp>
+#include <string>
 
 namespace scream {
 
