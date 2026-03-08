@@ -4,6 +4,7 @@
 #include <ekat_parameter_list.hpp>
 #include <TChem.hpp>
 #include <string>
+#include <vector>
 
 namespace scream {
 
@@ -38,6 +39,7 @@ class TChemATM : public AtmosphereProcess {
   explicit_euler_type::real_type_1d_view_type m_t;
   explicit_euler_type::real_type_1d_view_type m_dt_view;
   TChem::time_advance_type_1d_view m_tadv;
+  std::vector<Real> m_species_mw;
   int m_ncols = 0;
   int m_nlevs = 0;
   int m_nbatch = 0;
