@@ -118,17 +118,29 @@ void TChemATM::create_requests() {
   std::cout << "[TChemATM] createNCAR_KineticModelConstData\n";
   m_kmcd = TChem::createNCAR_KineticModelConstData<tchem_device_type>(m_kmd);
   std::cout << "[TChemATM] Done KineticModelData "<<m_kmd.nSpec_ <<"\n";
-  // TODO:add MQ in the init file.
-  // m_species_mw = m_params.get<std::vector<Real>>("species_mw");
-  // EKAT_REQUIRE_MSG(static_cast<int>(m_species_mw.size()) == m_kmd.nSpec_,
-                  //  "Error! Parameter 'species_mw' must have one molecular weight per TChem species.\n");
-   
-   // TODO: initialze m_species_mw with ones. 
-   m_species_mw = std::vector<Real>(m_kmd.nSpec_, 1.0);
-   m_tchem_ready = true;
+
+  // Build m_species_mw indexed by TChem species order.
+  // molecular_weights in the parameter list is a sublist mapping
+  // species name -> MW (g/mol).
+  m_species_mw.resize(m_kmd.nSpec_, 1.0);
+  EKAT_REQUIRE_MSG(m_params.isSublist("molecular_weights"),
+                   "Error! Missing required sublist 'molecular_weights' "
+                   "under tchem_atm parameters.\n");
+  const auto& mw_list = m_params.sublist("molecular_weights");
+  const auto species_names_host = m_kmd.sNames_.view_host();
+  for (int i = 0; i < m_kmcd.nSpec - m_kmcd.nConstSpec; ++i) {
+    const std::string sname(&species_names_host(i, 0));
+    EKAT_REQUIRE_MSG(mw_list.isParameter(sname),
+                     "Error! Molecular weight not found for species '" +
+                     sname + "' in 'molecular_weights' sublist.\n");
+    m_species_mw[i] = mw_list.get<double>(sname);
+    std::cout << "[TChemATM] Molecular weight for species "<< i <<" " << sname << " = " << m_species_mw[i] << " g/mol\n";
+  }
+  std::cout << "[TChemATM] Done loading molecular weights\n";
+  m_tchem_ready = true;
    std::cout << "[TChemATM] Done m_species_mw\n";
 
-  const auto species_names_host = m_kmd.sNames_.view_host();
+  
   for (int i = 0; i < m_kmd.nSpec_; ++i) {
     const std::string sname(&species_names_host(i, 0));
     std::cout << "[TChemATM] species[" << i << "] = " << sname << "\n";
@@ -234,7 +246,7 @@ void TChemATM::run_impl(const double dt) {
       m_kmcd);
 
   // After the TChem run, convert dry-vmr state back to wet-mmr tracer fields.
-  for (int ivar = 0; ivar < m_kmd.nSpec_; ++ivar) {
+  for (int ivar = 0; ivar < m_kmcd.nSpec - m_kmcd.nConstSpec; ++ivar) {
     const auto& tracer_name = std::string(&species_names_host(ivar, 0));
     const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
     fill_wet_mmr_field_from_state_column(q_tracer, state, qv, nlevs, m_nbatch,
@@ -243,10 +255,13 @@ void TChemATM::run_impl(const double dt) {
   } 
 
   //TODO:
-  // modify TChem-atm functions signature to pass tem and pressure
   // get mw from uci yaml file. 
-  // run test with traces.
+  // compute M and invariants. 
+  // new to update values to use mmr instead of vmr
+  // run CIME test with traces.
   // Future:
+  // Add other solvers. 
+  // modify TChem-atm functions signature to pass tem and pressure
   // connect to aerosols. 
   
 }
