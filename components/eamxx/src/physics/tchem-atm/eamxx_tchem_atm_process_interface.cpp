@@ -128,7 +128,9 @@ void TChemATM::create_requests() {
                    "under tchem_atm parameters.\n");
   const auto& mw_list = m_params.sublist("molecular_weights");
   const auto species_names_host = m_kmd.sNames_.view_host();
-  for (int i = 0; i < m_kmcd.nSpec - m_kmcd.nConstSpec; ++i) {
+  //FIXME: get number of invariansts from chem mech. 
+  m_num_invariants=9; // M, N2, O2, H2O, H2, and 4 constant tracers in the mechanism.
+  for (int i = 0; i < m_kmcd.nSpec - m_num_invariants; ++i) {
     const std::string sname(&species_names_host(i, 0));
     EKAT_REQUIRE_MSG(mw_list.isParameter(sname),
                      "Error! Molecular weight not found for species '" +
@@ -229,7 +231,7 @@ void TChemATM::run_impl(const double dt) {
                                "tchem_init_state_t");
   std::cout << "[TChemATM] Done fill_state_column_from_field\n";
   const auto species_names_host = m_kmd.sNames_.view_host();
-  for (int ivar = 0; ivar < m_kmd.nSpec_; ++ivar) {
+  for (int ivar = 0; ivar < m_kmd.nSpec_-m_num_invariants; ++ivar) {
     const auto& tracer_name = std::string(&species_names_host(ivar, 0));
     std::cout << "[TChemATM] Filling state column for tracer " << tracer_name << "\n";
     const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
@@ -240,6 +242,49 @@ void TChemATM::run_impl(const double dt) {
   }
   std::cout << "[TChemATM] Done fill_state_column_from_wet_mmr_field\n";
 
+     // conversion factor for Pascals to dyne/cm^2
+  constexpr Real Pa_xfac = 10.0;
+  // presumably, the boltzmann constant, in CGS units
+  constexpr Real boltz_cgs = 0.13806500000000001E-015;
+  // Compute invariants:
+  // step 1: M [molecules/cm^3] = Pa_xfac * P [Pa] / (boltz_cgs * T [K])
+  const int m_state_col = m_kmcd.M_index + 3;
+  constexpr int num_tracer_cnst = 3;
+  Kokkos::parallel_for(
+      "tchem_compute_M", Kokkos::RangePolicy<TChem::exec_space>(0, m_nbatch),
+      KOKKOS_LAMBDA(const int i) {
+        const int icol = i / nlevs;
+        const int ilev = i % nlevs;
+        const Real m_value =
+            Pa_xfac * p_mid(icol, ilev) / (boltz_cgs * t_mid(icol, ilev));
+        state(i, m_state_col) = m_value;
+        // N2 = 0.79 * M
+        state(i, m_state_col + 1) = 0.79 * m_value;
+        // O2 = 0.21 * M
+        state(i, m_state_col + 2) = 0.21 * m_value;
+        // H2O = qv * M / (1 + qv)
+        state(i, m_state_col + 3) = qv(icol, ilev) * m_value / (1.0 + qv(icol, ilev));
+        // H2 = 5.5e-7 * M
+        state(i, m_state_col + 4) = 5.5e-7 * m_value;
+        // CH4 =0;
+        state(i, m_state_col + 5) = 0.0;
+        
+      });
+ 
+
+  for (int j = 0; j < num_tracer_cnst; ++j) {
+    const auto& tracer_name = std::string(&species_names_host(m_kmcd.M_index + 6 + j, 0));
+    std::cout << "[TChemATM] Filling state column for invariant tracer " << tracer_name << "\n";
+    const auto& q_tracer = get_field_out(tracer_name).get_view<Real **>();
+    const int state_col_j = m_state_col + 6 + j;
+    Kokkos::parallel_for(
+      "tchem_compute_cnst_tracer", Kokkos::RangePolicy<TChem::exec_space>(0, m_nbatch),
+      KOKKOS_LAMBDA(const int i) {
+        const int icol = i / nlevs;
+        const int ilev = i % nlevs;
+        state(i, state_col_j) = q_tracer(icol, ilev) * state(i, m_state_col);
+      });
+  }
   TChem::AtmosphericChemistryE3SM_ExplicitEuler::runDeviceBatch(
       policy, m_tadv, m_state, m_photo_rates, m_external_sources, m_t,
       m_dt_view, m_state,
@@ -255,9 +300,8 @@ void TChemATM::run_impl(const double dt) {
   } 
 
   //TODO:
-  // get mw from uci yaml file. 
-  // compute M and invariants. 
   // new to update values to use mmr instead of vmr
+  // Run tropopause 
   // run CIME test with traces.
   // Future:
   // Add other solvers. 
