@@ -43,6 +43,7 @@ class TChemATM : public AtmosphereProcess {
   int m_ncols = 0;
   int m_nlevs = 0;
   int m_nbatch = 0;
+  int m_num_invariants=0;
   TChem::ordinal_type m_n_active_vars = 0;
   TChem::ordinal_type m_state_vec_dim = 0;
   bool m_tchem_ready = false;
