@@ -497,6 +497,59 @@ be lost if SCREAM_HACK_XML is not enabled.
       <spc_data_file hgrid="ne4np4.pg2">${DIN_LOC_ROOT}/atm/scream/init/spc_from_v3LRamip_2010_clim_ne4pg2_c20260211.nc</spc_data_file>
     </spc>
 
+    <!-- TChem-ATM atmospheric chemistry -->
+    <tchem_atm inherit="atm_proc_base">
+      <chem_file type="file" doc="TChem chemistry mechanism file">none</chem_file>
+      <molecular_weights>
+        <O3       type="real" doc="Molecular weight of O3 (g/mol)">47.998200</O3>
+        <OH       type="real" doc="Molecular weight of OH (g/mol)">17.006800</OH>
+        <HO2      type="real" doc="Molecular weight of HO2 (g/mol)">33.006200</HO2>
+        <H2O2     type="real" doc="Molecular weight of H2O2 (g/mol)">34.013600</H2O2>
+        <CH2O     type="real" doc="Molecular weight of CH2O (g/mol)">30.025200</CH2O>
+        <CH3O2    type="real" doc="Molecular weight of CH3O2 (g/mol)">47.032000</CH3O2>
+        <CH3OOH   type="real" doc="Molecular weight of CH3OOH (g/mol)">48.039400</CH3OOH>
+        <NO       type="real" doc="Molecular weight of NO (g/mol)">30.006140</NO>
+        <NO2      type="real" doc="Molecular weight of NO2 (g/mol)">46.005540</NO2>
+        <NO3      type="real" doc="Molecular weight of NO3 (g/mol)">62.004940</NO3>
+        <N2O5     type="real" doc="Molecular weight of N2O5 (g/mol)">108.010480</N2O5>
+        <HNO3     type="real" doc="Molecular weight of HNO3 (g/mol)">63.012340</HNO3>
+        <HO2NO2   type="real" doc="Molecular weight of HO2NO2 (g/mol)">79.011740</HO2NO2>
+        <PAN      type="real" doc="Molecular weight of PAN (g/mol)">121.047940</PAN>
+        <CO       type="real" doc="Molecular weight of CO (g/mol)">28.010400</CO>
+        <C2H6     type="real" doc="Molecular weight of C2H6 (g/mol)">30.066400</C2H6>
+        <C3H8     type="real" doc="Molecular weight of C3H8 (g/mol)">44.092200</C3H8>
+        <C2H4     type="real" doc="Molecular weight of C2H4 (g/mol)">28.051600</C2H4>
+        <ROHO2    type="real" doc="Molecular weight of ROHO2 (g/mol)">77.057200</ROHO2>
+        <CH3COCH3 type="real" doc="Molecular weight of CH3COCH3 (g/mol)">58.076800</CH3COCH3>
+        <C2H5O2   type="real" doc="Molecular weight of C2H5O2 (g/mol)">61.057800</C2H5O2>
+        <C2H5OOH  type="real" doc="Molecular weight of C2H5OOH (g/mol)">62.065200</C2H5OOH>
+        <CH3CHO   type="real" doc="Molecular weight of CH3CHO (g/mol)">44.051000</CH3CHO>
+        <CH3CO3   type="real" doc="Molecular weight of CH3CO3 (g/mol)">75.042400</CH3CO3>
+        <ISOP     type="real" doc="Molecular weight of ISOP (g/mol)">68.114200</ISOP>
+        <ISOP_VBS type="real" doc="Molecular weight of ISOP_VBS (g/mol)">68.114200</ISOP_VBS>
+        <ISOPO2   type="real" doc="Molecular weight of ISOPO2 (g/mol)">117.119800</ISOPO2>
+        <C10H16   type="real" doc="Molecular weight of C10H16 (g/mol)">136.228400</C10H16>
+        <MVKMACR  type="real" doc="Molecular weight of MVKMACR (g/mol)">70.087800</MVKMACR>
+        <MVKO2    type="real" doc="Molecular weight of MVKO2 (g/mol)">119.093400</MVKO2>
+        <E90      type="real" doc="Molecular weight of E90 (g/mol)">47.998200</E90>
+        <N2OLNZ   type="real" doc="Molecular weight of N2OLNZ (g/mol)">28.013480</N2OLNZ>
+        <NOYLNZ   type="real" doc="Molecular weight of NOYLNZ (g/mol)">14.006740</NOYLNZ>
+        <CH4LNZ   type="real" doc="Molecular weight of CH4LNZ (g/mol)">16.040600</CH4LNZ>
+        <H2OLNZ   type="real" doc="Molecular weight of H2OLNZ (g/mol)">18.014200</H2OLNZ>
+        <DMS      type="real" doc="Molecular weight of DMS (g/mol)">62.132400</DMS>
+        <SO2      type="real" doc="Molecular weight of SO2 (g/mol)">64.064800</SO2>
+        <H2SO4    type="real" doc="Molecular weight of H2SO4 (g/mol)">98.078400</H2SO4>
+        <SOAG0    type="real" doc="Molecular weight of SOAG0 (g/mol)">250.445000</SOAG0>
+        <SOAG15   type="real" doc="Molecular weight of SOAG15 (g/mol)">250.445000</SOAG15>
+        <SOAG24   type="real" doc="Molecular weight of SOAG24 (g/mol)">250.445000</SOAG24>
+        <SOAG31   type="real" doc="Molecular weight of SOAG31 (g/mol)">250.445000</SOAG31>
+        <SOAG32   type="real" doc="Molecular weight of SOAG32 (g/mol)">250.445000</SOAG32>
+        <SOAG33   type="real" doc="Molecular weight of SOAG33 (g/mol)">250.445000</SOAG33>
+        <SOAG34   type="real" doc="Molecular weight of SOAG34 (g/mol)">250.445000</SOAG34>
+        <SOAG35   type="real" doc="Molecular weight of SOAG35 (g/mol)">250.445000</SOAG35>
+      </molecular_weights>
+    </tchem_atm>
+
     <!-- Radiation -->
     <rrtmgp inherit="atm_proc_base">
       <rrtmgp_coefficients_file_sw type="file">${DIN_LOC_ROOT}/atm/scream/init/rrtmgp-data-sw-g112-210809.nc</rrtmgp_coefficients_file_sw>
@@ -741,6 +794,57 @@ be lost if SCREAM_HACK_XML is not enabled.
     <perturbation_random_seed type="integer" doc="Random seed used for perturbation. Will be overridded by generate_perturbation_random_seed=true.">0</perturbation_random_seed>
     <perturbation_limit type="real" doc="Defines a range [1-x, 1+x] which perturbation will be taken from.">0.001</perturbation_limit>
     <perturbation_minimum_pressure type="real" doc="Minimum pressure (relative to a reference level pressure profile) for which perturbation will be applied.">900.0</perturbation_minimum_pressure>
+    <!-- TChem-ATM species initial conditions (kg/kg wet MMR) -->
+  <O3       type="real">3.0618267032878066e-08</O3>
+  <OH       type="real">1.0875470840875157e-18</OH>
+  <HO2      type="real">4.870653851927001e-16</HO2>
+  <H2O2     type="real">3.099493578462287e-11</H2O2>
+  <CH2O     type="real">5.498880864540645e-12</CH2O>
+  <CH3O2    type="real">1.2069309996746666e-15</CH3O2>
+  <CH3OOH   type="real">1.94485903076691e-11</CH3OOH>
+  <NO       type="real">1.1845036128159403e-13</NO>
+  <NO2      type="real">4.764759767295068e-11</NO2>
+  <NO3      type="real">3.2511028645685475e-14</NO3>
+  <N2O5     type="real">3.2150833644689625e-13</N2O5>
+  <HNO3     type="real">2.014916879178319e-11</HNO3>
+  <HO2NO2   type="real">1.2042529516989586e-12</HO2NO2>
+  <PAN      type="real">3.29485848327149e-11</PAN>
+  <CO       type="real">6.238423821969263e-08</CO>
+  <C2H6     type="real">2.7846963623900933e-10</C2H6>
+  <C3H8     type="real">1.5960576610352106e-11</C3H8>
+  <C2H4     type="real">1.803020487902915e-13</C2H4>
+  <ROHO2    type="real">1.297014961182508e-18</ROHO2>
+  <CH3COCH3 type="real">1.0086246421403544e-10</CH3COCH3>
+  <C2H5O2   type="real">8.434889746378781e-18</C2H5O2>
+  <C2H5OOH  type="real">1.0135736515501023e-13</C2H5OOH>
+  <CH3CHO   type="real">3.031207012824111e-13</CH3CHO>
+  <CH3CO3   type="real">8.593855972330727e-19</CH3CO3>
+  <ISOP     type="real">2.410565558876856e-15</ISOP>
+  <ISOP_VBS type="real">0.0</ISOP_VBS>
+  <ISOPO2   type="real">2.5144612995932207e-19</ISOPO2>
+  <C10H16   type="real">0.0</C10H16>
+  <MVKMACR  type="real">3.2766419243678013e-14</MVKMACR>
+  <MVKO2    type="real">5.625484739971802e-19</MVKO2>
+  <E90      type="real">1.0160114527479891e-07</E90>
+  <N2OLNZ   type="real">3.1943085332386545e-07</N2OLNZ>
+  <NOYLNZ   type="real">1.1169199592986345e-10</NOYLNZ>
+  <CH4LNZ   type="real">1.7632219169172458e-06</CH4LNZ>
+  <H2OLNZ   type="real">7.018954784143716e-05</H2OLNZ>
+  <DMS      type="real">3.0128091861592043e-13</DMS>
+  <SO2      type="real">2.425821869767031e-11</SO2>
+  <H2SO4    type="real">1.4787537192065834e-15</H2SO4>
+  <SOAG0    type="real">0.0</SOAG0>
+  <SOAG15   type="real">0.0</SOAG15>
+  <SOAG24   type="real">0.0</SOAG24>
+  <SOAG31   type="real">0.0</SOAG31>
+  <SOAG32   type="real">0.0</SOAG32>
+  <SOAG33   type="real">0.0</SOAG33>
+  <SOAG34   type="real">0.0</SOAG34>
+  <SOAG35   type="real">0.0</SOAG35>
+  <!-- TChem-ATM invariant species; computed internally at runtime -->
+  <prsd_O3  type="real">1.0</prsd_O3>
+  <prsd_NO3 type="real">1.0</prsd_NO3>
+  <prsd_OH  type="real">1.0</prsd_OH>
   </initial_conditions>
 
   <!-- List of yaml files containing I/O output specs -->
