@@ -53,6 +53,10 @@ if (SCREAM_ENABLE_MAM)
   list (APPEND SCREAM_LIBS mam)
 endif()
 
+if (SCREAM_ENABLE_TCHEM)
+  list (APPEND SCREAM_LIBS eamxx_tchem_atm)
+endif()
+
 # Create atm lib
 add_library(atm ${ATM_SRC})
 
