@@ -301,8 +301,9 @@ void TChemATM::run_impl(const double dt) {
 
   //TODO:
   // new to update values to use mmr instead of vmr
-  // Run tropopause 
   // run CIME test with traces.
+  // Run tropopause 
+  // Run stratoshere
   // Future:
   // Add other solvers. 
   // modify TChem-atm functions signature to pass tem and pressure
