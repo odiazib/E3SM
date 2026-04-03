@@ -1,0 +1,10 @@
+alias ATMCHANGE='$CIMEROOT/../components/eamxx/scripts/atmchange'
+##UCI has 46 tracers. FIXME: get this information from tchem. 
+./xmlchange SCREAM_CMAKE_OPTIONS="SCREAM_NP 4 SCREAM_NUM_VERTICAL_LEV 72 SCREAM_NUM_TRACERS 86"
+
+#------------------------------------------------------
+# Add microphysics process
+#------------------------------------------------------
+ATMCHANGE physics::atm_procs_list="mac_aero_mic,rrtmgp,tchem_atm" -b
+ATMCHANGE tchem_atm::chem_file="/pscratch/sd/o/odiazib/e3sm-tchem/E3SM/externals/tchem-atm/src/examples/runs/atmospheric_chemistry/uci_e3sm_v3/uci_v2_gas.yaml" -b
+
