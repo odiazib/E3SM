@@ -4,7 +4,7 @@ set (TEST_BASE_NAME tchem_atm_standalone)
 
 # Use a checked-in TChem-atm chemistry mechanism file for this standalone smoke test.
 set (TCHEM_ATM_CHEM_FILE
-     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../externals/tchem-atm/src/examples/runs/atmospheric_chemistry/uci_e3sm_v3/uci_v2.yaml")
+     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../externals/tchem-atm/src/examples/runs/atmospheric_chemistry/uci_e3sm_v3/uci_v2_gas.yaml")
 
 # Create the test
 CreateADUnitTest(${TEST_BASE_NAME}
