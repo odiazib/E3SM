@@ -142,11 +142,19 @@ void TChemATM::create_requests() {
   m_tchem_ready = true;
    std::cout << "[TChemATM] Done m_species_mw\n";
 
-  
-  for (int i = 0; i < m_kmd.nSpec_; ++i) {
+  //FIXME: invariants are not tracers.
+  for (int i = 0; i < m_kmd.nSpec_ - m_num_invariants; ++i) {
     const std::string sname(&species_names_host(i, 0));
     std::cout << "[TChemATM] species[" << i << "] = " << sname << "\n";
     add_tracer<Updated>(sname, m_grid, q_unit);
+  }
+  std::cout << "[TChemATM] Number of tracers added: " << m_kmd.nSpec_ - m_num_invariants << "\n";
+    // Add prescribed constant tracer fields (oxidants).
+  // M, N2, O2, H2O, H2, CH4 are computed from T and P at runtime, not registered as fields.
+  constexpr int num_tracer_cnst = 3;
+  for (int j = 0; j < num_tracer_cnst; ++j) {
+    const std::string sname(&species_names_host(m_kmcd.M_index + 6 + j, 0));
+    add_field<Updated>(sname, scalar3d_mid, q_unit, grid_name);
   }
   std::cout << "[TChemATM] Done create_requests\n";
 }
@@ -302,6 +310,7 @@ void TChemATM::run_impl(const double dt) {
   //TODO:
   // new to update values to use mmr instead of vmr
   // run CIME test with traces.
+  // run only w TChem-atm traces it looks like I also need mam4xx tracers. 
   // Run tropopause 
   // Run stratoshere
   // Future:
