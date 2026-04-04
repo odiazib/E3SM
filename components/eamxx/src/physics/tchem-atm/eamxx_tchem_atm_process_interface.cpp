@@ -180,6 +180,45 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   m_t = explicit_euler_type::real_type_1d_view_type("tchem_time", m_nbatch);
   m_dt_view = explicit_euler_type::real_type_1d_view_type("tchem_dt", m_nbatch);
   m_tadv = TChem::time_advance_type_1d_view("tchem_tadv", m_nbatch);
+
+  // Read solver/time-stepping parameters from the namelist.
+  m_solver_type          = m_params.get<std::string>("solver_type", "explicit_euler");
+  m_max_time_iterations  = m_params.get<int>("max_time_iterations", 1000);
+  m_jacobian_interval    = m_params.get<int>("jacobian_interval", 1);
+  m_dtmin_sub            = m_params.get<double>("dtmin_sub", 1e-4);
+  m_dtmax_sub            = m_params.get<double>("dtmax_sub", -1.0);
+  m_atol_newton          = m_params.get<double>("atol_newton", 1e-10);
+  m_rtol_newton          = m_params.get<double>("rtol_newton", 1e-6);
+  m_atol_time            = m_params.get<double>("atol_time", 1e-12);
+  m_rtol_time            = m_params.get<double>("rtol_time", 1e-4);
+  std::cout << "[TChemATM] solver_type = " << m_solver_type << "\n";
+
+  // Allocate and populate tolerance/scaling views for implicit solvers.
+  if (m_solver_type == "implicit_euler" || m_solver_type == "trbdf2") {
+    using problem_type =
+        TChem::Impl::AtmosphericChemistryE3SM_Problem<TChem::real_type,
+                                                      tchem_device_type>;
+    const TChem::ordinal_type number_of_equations =
+        problem_type::getNumberOfTimeODEs(m_kmcd);
+
+    m_tol_newton = explicit_euler_type::real_type_1d_view_type("tchem_tol_newton", 2);
+    m_tol_time   = explicit_euler_type::real_type_2d_view_type("tchem_tol_time",
+                                                                number_of_equations, 2);
+    m_fac        = explicit_euler_type::real_type_2d_view_type("tchem_fac",
+                                                                m_nbatch, number_of_equations);
+
+    auto tol_newton_host = Kokkos::create_mirror_view(m_tol_newton);
+    auto tol_time_host   = Kokkos::create_mirror_view(m_tol_time);
+    tol_newton_host(0) = m_atol_newton;
+    tol_newton_host(1) = m_rtol_newton;
+    for (TChem::ordinal_type i = 0; i < number_of_equations; ++i) {
+      tol_time_host(i, 0) = m_atol_time;
+      tol_time_host(i, 1) = m_rtol_time;
+    }
+    Kokkos::deep_copy(m_tol_newton, tol_newton_host);
+    Kokkos::deep_copy(m_tol_time, tol_time_host);
+    Kokkos::deep_copy(m_fac, 0.0);
+  }
   std::cout << "[TChemATM] Done initialize_impl\n";
 }
 
@@ -209,7 +248,14 @@ void TChemATM::run_impl(const double dt) {
   using policy_type = typename TChem::UseThisTeamPolicy<TChem::exec_space>::type;
 
   policy_type policy(TChem::exec_space(), m_nbatch, Kokkos::AUTO());
-  const ordinal_type per_team_extent = explicit_euler_type::getWorkSpaceSize(m_kmcd);
+  ordinal_type per_team_extent = 0;
+  if (m_solver_type == "implicit_euler") {
+    per_team_extent = implicit_euler_type::getWorkSpaceSize(m_kmcd);
+  } else if (m_solver_type == "trbdf2") {
+    per_team_extent = trbdf2_type::getWorkSpaceSize(m_kmcd);
+  } else {
+    per_team_extent = explicit_euler_type::getWorkSpaceSize(m_kmcd);
+  }
   const ordinal_type per_team_scratch =
       TChem::Scratch<TChem::real_type_1d_view>::shmem_size(per_team_extent);
   policy.set_scratch_size(1, Kokkos::PerTeam(per_team_scratch));
@@ -219,15 +265,17 @@ void TChemATM::run_impl(const double dt) {
   Kokkos::deep_copy(m_t, 0.0);
   Kokkos::deep_copy(m_dt_view, dt);
 
+  const Real dtmax_sub = (m_dtmax_sub > 0.0) ? m_dtmax_sub : dt;
+  const Real dtmin_sub = m_dtmin_sub;
   TChem::time_advance_type tadv_default;
   tadv_default._tbeg = 0;
   tadv_default._tend = dt;
-  tadv_default._dt = dt;
-  tadv_default._dtmin = dt;
-  tadv_default._dtmax = dt;
-  tadv_default._max_num_newton_iterations = 1;
-  tadv_default._num_time_iterations_per_interval = 1;
-  tadv_default._jacobian_interval = 1;
+  tadv_default._dt   = dt/100;
+  tadv_default._dtmin = dt/1000;
+  tadv_default._dtmax = dtmax_sub;
+  tadv_default._max_num_newton_iterations = m_params.get<int>("max_newton_iterations", 100);
+  tadv_default._num_time_iterations_per_interval = 100;
+  tadv_default._jacobian_interval = m_jacobian_interval;
   Kokkos::deep_copy(m_tadv, tadv_default);
 
   std::cout << "[TChemATM] Starting TChem run\n";
@@ -293,10 +341,44 @@ void TChemATM::run_impl(const double dt) {
         state(i, state_col_j) = q_tracer(icol, ilev) * state(i, m_state_col);
       });
   }
-  TChem::AtmosphericChemistryE3SM_ExplicitEuler::runDeviceBatch(
-      policy, m_tadv, m_state, m_photo_rates, m_external_sources, m_t,
-      m_dt_view, m_state,
-      m_kmcd);
+  // Time loop: mirrors TChem_AtmosphericChemistryE3SM.cpp standalone example.
+  // Solver type and time-stepping parameters are controlled via namelist.
+  TChem::real_type tsum(0);
+  const auto tadv        = m_tadv;
+  const auto t_view      = m_t;
+  const auto dt_view     = m_dt_view;
+  const auto tol_newton  = m_tol_newton;
+  const auto tol_time    = m_tol_time;
+  const auto fac         = m_fac;
+  const auto kmcd        = m_kmcd;
+  for (int iter = 0; iter < m_max_time_iterations && tsum <= dt * 0.9999;
+       ++iter) {
+    if (m_solver_type == "implicit_euler") {
+      implicit_euler_type::runDeviceBatch(
+          policy, tol_newton, tol_time, fac, tadv, m_state, m_photo_rates,
+          m_external_sources, t_view, dt_view, m_state, kmcd);
+    } else if (m_solver_type == "trbdf2") {
+      trbdf2_type::runDeviceBatch(
+          policy, tol_newton, tol_time, fac, tadv, m_state, m_photo_rates,
+          m_external_sources, t_view, dt_view, m_state, kmcd);
+    } else {
+      explicit_euler_type::runDeviceBatch(
+          policy, tadv, m_state, m_photo_rates, m_external_sources, t_view,
+          dt_view, m_state, kmcd);
+    }
+    TChem::exec_space().fence();
+    tsum = 0;
+    Kokkos::parallel_reduce(
+        Kokkos::RangePolicy<TChem::exec_space>(0, m_nbatch),
+        KOKKOS_LAMBDA(const int i, TChem::real_type& update) {
+          tadv(i)._tbeg = t_view(i);
+          tadv(i)._dt   = dt_view(i);
+          update += t_view(i);
+        },
+        tsum);
+    Kokkos::fence();
+    tsum /= m_nbatch;
+  }
 
   // After the TChem run, convert dry-vmr state back to wet-mmr tracer fields.
   for (int ivar = 0; ivar < m_kmcd.nSpec - m_kmcd.nConstSpec; ++ivar) {
