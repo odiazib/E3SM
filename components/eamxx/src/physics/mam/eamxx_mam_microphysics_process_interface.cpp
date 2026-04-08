@@ -736,6 +736,8 @@ void MAMMicrophysics::initialize_impl(const RunType run_type) {
   }
   init_temporary_views();
   cmfdqr_ = view_1d("cmfdqr_", nlev_);
+  amicphys_scratch_ = Kokkos::View<mam4::microphysics::AmicPhysScratch**>(
+      "amicphys_scratch", ncol_, nlev_);
   set_oxid_reader();
   if (config_.linoz.compute) {
     set_linoz_reader();

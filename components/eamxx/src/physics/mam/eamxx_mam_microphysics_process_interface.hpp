@@ -173,6 +173,8 @@ class MAMMicrophysics final : public MAMGenericInterface {
 
   view_3d dgncur_awet_, dgncur_a_, wetdens_;
 
+  Kokkos::View<mam4::microphysics::AmicPhysScratch**> amicphys_scratch_;
+
   void add_io_docstring_to_fields_with_mixed_units(const std::map<std::string, std::string> &flds) {
     using str_atts_t = std::map<std::string,std::string>;
     for (const auto &pair : flds) {

@@ -600,6 +600,7 @@ void MAMMicrophysics::run_microphysics_kernels(const double dt, const double ecc
     const bool extra_mam4_aero_microphys_diags  = extra_mam4_aero_microphys_diags_;
 
     const auto& config_amicphys = config_.amicphys;
+    const auto& amicphys_scratch = amicphys_scratch_;
      Kokkos::parallel_for(
     "MAMMicrophysics::run_impl::modal_aero_amicphys_intr", policy,
     KOKKOS_LAMBDA(const ThreadTeam &team) {
@@ -662,7 +663,10 @@ void MAMMicrophysics::run_microphysics_kernels(const double dt, const double ecc
         diag_arrays.gas_aero_exchange_coagulation,
         diag_arrays.gas_aero_exchange_renaming_cloud_borne,
         // in
-        vmr0_kk, vmr_pregas_kk, vmr_precld_kk, dgncur_a_kk, dgncur_awet_kk, wetdens_kk);
+        vmr0_kk, vmr_pregas_kk, vmr_precld_kk, dgncur_a_kk, dgncur_awet_kk, wetdens_kk,
+        // workspace
+        amicphys_scratch(icol, kk)
+      );
       });
     }); 
 
