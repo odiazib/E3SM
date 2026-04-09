@@ -649,6 +649,7 @@ void MAMMicrophysics::run_microphysics_kernels(const double dt, const double ecc
         const auto & vmr0_kk = ekat::subview(vmr0_icol,kk);
         const auto & vmr_pregas_kk = ekat::subview(vmr_pregas_icol,kk);
         const auto & vmr_precld_kk = ekat::subview(vmr_precld_icol,kk);
+        mam4::microphysics::AmicPhysScratch sc_local={};
     // Perform aerosol microphysics (gas-aerosol exchange, nucleation,
     // coagulation)
     mam4::microphysics::modal_aero_amicphys_intr(
@@ -665,7 +666,8 @@ void MAMMicrophysics::run_microphysics_kernels(const double dt, const double ecc
         // in
         vmr0_kk, vmr_pregas_kk, vmr_precld_kk, dgncur_a_kk, dgncur_awet_kk, wetdens_kk,
         // workspace
-        amicphys_scratch(icol, kk)
+        sc_local
+        // amicphys_scratch(icol, kk)
       );
       });
     }); 
