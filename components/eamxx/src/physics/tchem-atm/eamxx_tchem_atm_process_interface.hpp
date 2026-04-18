@@ -11,7 +11,9 @@ namespace scream {
 class TChemATM : public AtmosphereProcess {
  public:
   using tchem_device_type = typename Tines::UseThisDevice<TChem::exec_space>::type;
-  using explicit_euler_type = TChem::AtmosphericChemistryE3SM_ExplicitEuler;
+  using explicit_euler_type  = TChem::AtmosphericChemistryE3SM_ExplicitEuler;
+  using implicit_euler_type  = TChem::AtmosphericChemistryE3SM_ImplicitEuler;
+  using trbdf2_type          = TChem::AtmosphericChemistryE3SM;
 
   TChemATM(const ekat::Comm& comm, const ekat::ParameterList& params);
 
@@ -47,6 +49,20 @@ class TChemATM : public AtmosphereProcess {
   TChem::ordinal_type m_n_active_vars = 0;
   TChem::ordinal_type m_state_vec_dim = 0;
   bool m_tchem_ready = false;
+  // Solver selection and time-stepping parameters (read from namelist).
+  std::string m_solver_type = "explicit_euler";
+  int m_max_time_iterations = 1000;
+  int m_jacobian_interval   = 1;
+  Real m_dtmin_sub   = 1e-4;
+  Real m_dtmax_sub   = -1.0; // negative → use physics dt
+  Real m_atol_newton = 1e-10;
+  Real m_rtol_newton = 1e-6;
+  Real m_atol_time   = 1e-12;
+  Real m_rtol_time   = 1e-4;
+  // Tolerance and scaling views used by implicit solvers.
+  explicit_euler_type::real_type_1d_view_type m_tol_newton;
+  explicit_euler_type::real_type_2d_view_type m_tol_time;
+  explicit_euler_type::real_type_2d_view_type m_fac;
 };
 
 }  // namespace scream
