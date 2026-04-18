@@ -148,7 +148,7 @@ void TChemATM::create_requests() {
     // std::cout << "[TChemATM] species[" << i << "] = " << sname << "\n";
     add_tracer<Updated>(sname, m_grid, q_unit);
   }
-  // std::cout << "[TChemATM] Number of tracers added: " << m_kmd.nSpec_ - m_num_invariants << "\n";
+  std::cout << "[TChemATM] Number of tracers added: " << m_kmd.nSpec_ - m_num_invariants << "\n";
     // Add prescribed constant tracer fields (oxidants).
   // M, N2, O2, H2O, H2, CH4 are computed from T and P at runtime, not registered as fields.
   constexpr int num_tracer_cnst = 3;
@@ -186,13 +186,13 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   m_solver_type          = m_params.get<std::string>("solver_type", "implicit_euler");
   m_max_time_iterations  = m_params.get<int>("max_time_iterations", 100);
   m_jacobian_interval    = m_params.get<int>("jacobian_interval", 1);
-  m_dtmin_sub            = m_params.get<double>("dtmin_sub", 1e-4);
+  m_dtmin_sub            = m_params.get<double>("dtmin_sub", 1e-1);
   m_dtmax_sub            = m_params.get<double>("dtmax_sub", -1.0);
   m_atol_newton          = m_params.get<double>("atol_newton", 1e-10);
   m_rtol_newton          = m_params.get<double>("rtol_newton", 1e-6);
   m_atol_time            = m_params.get<double>("atol_time", 1e-12);
   m_rtol_time            = m_params.get<double>("rtol_time", 1e-4);
-  m_use_shared_workspace = m_params.get<bool>("use_shared_workspace", false);
+  m_use_shared_workspace = m_params.get<bool>("use_shared_workspace", true);
   std::cout << "[TChemATM] solver_type = " << m_solver_type << "\n";
 
   // Allocate and populate tolerance/scaling views for implicit solvers.
@@ -225,14 +225,14 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   if (!m_use_shared_workspace) {
     TChem::ordinal_type per_team_extent = 0;
     if (m_solver_type == "implicit_euler") {
-      per_team_extent = implicit_euler_type::getWorkSpaceSize(m_kmcd);
+      per_team_extent = TChem::AtmosphericChemistryE3SM::getWorkSpaceSize(m_kmcd);
     } else if (m_solver_type == "trbdf2") {
-      per_team_extent = trbdf2_type::getWorkSpaceSize(m_kmcd);
+      per_team_extent = TChem::AtmosphericChemistryE3SM::getWorkSpaceSize(m_kmcd);
     } else {
-      per_team_extent = explicit_euler_type::getWorkSpaceSize(m_kmcd);
+      per_team_extent = TChem::AtmosphericChemistryE3SM_ExplicitEuler::getWorkSpaceSize(m_kmcd);
     }
     m_workspace = explicit_euler_type::real_type_2d_view_type(
-        "tchem_workspace", m_nbatch, per_team_extent);
+        "tchem_workspace", m_nbatch, 10*per_team_extent);
   }
   // std::cout << "[TChemATM] Done initialize_impl\n";
 }
@@ -266,13 +266,13 @@ void TChemATM::run_impl(const double dt) {
 
   policy_type policy(TChem::exec_space(), m_nbatch, Kokkos::AUTO());
   ordinal_type per_team_extent = 0;
-  if (m_solver_type == "implicit_euler") {
-    per_team_extent = implicit_euler_type::getWorkSpaceSize(m_kmcd);
-  } else if (m_solver_type == "trbdf2") {
-    per_team_extent = trbdf2_type::getWorkSpaceSize(m_kmcd);
-  } else {
-    per_team_extent = explicit_euler_type::getWorkSpaceSize(m_kmcd);
-  }
+   if (m_solver_type == "implicit_euler") {
+      per_team_extent = TChem::AtmosphericChemistryE3SM::getWorkSpaceSize(m_kmcd);
+    } else if (m_solver_type == "trbdf2") {
+      per_team_extent = TChem::AtmosphericChemistryE3SM::getWorkSpaceSize(m_kmcd);
+    } else {
+      per_team_extent = TChem::AtmosphericChemistryE3SM_ExplicitEuler::getWorkSpaceSize(m_kmcd);
+    }
   //TODO: add the workspace for implicit_euler
   // use the use_shared_workspace option to turn on and offf
   if (m_use_shared_workspace) {
@@ -291,8 +291,8 @@ void TChemATM::run_impl(const double dt) {
   TChem::time_advance_type tadv_default;
   tadv_default._tbeg = 0;
   tadv_default._tend = dt;
-  tadv_default._dt   = dt;
-  tadv_default._dtmin = dt/1000;
+  tadv_default._dt   = dtmax_sub;
+  tadv_default._dtmin = dtmin_sub;
   tadv_default._dtmax = dtmax_sub;
   tadv_default._max_num_newton_iterations = m_params.get<int>("max_newton_iterations", 100);
   tadv_default._num_time_iterations_per_interval = 100;
@@ -345,13 +345,13 @@ void TChemATM::run_impl(const double dt) {
             Pa_xfac * p_mid(icol, ilev) / (boltz_cgs * t_mid(icol, ilev));
         state(i, m_state_col) = m_value;
         // N2 = 0.79 * M
-        state(i, m_state_col + 1) = 0.79 * m_value;
+        state(i, m_state_col + 1) = 0.79;// * m_value;
         // O2 = 0.21 * M
-        state(i, m_state_col + 2) = 0.21 * m_value;
+        state(i, m_state_col + 2) = 0.21;// * m_value;
         // H2O = qv * M / (1 + qv)
-        state(i, m_state_col + 3) = qv(icol, ilev) * m_value / (1.0 + qv(icol, ilev));
+        state(i, m_state_col + 3) = qv(icol, ilev) / (1.0 + qv(icol, ilev));//m_value;
         // H2 = 5.5e-7 * M
-        state(i, m_state_col + 4) = 5.5e-7 * m_value;
+        state(i, m_state_col + 4) = 5.5e-7;// * m_value;
         // CH4 =0;
         state(i, m_state_col + 5) = 0.0;
         
@@ -368,7 +368,7 @@ void TChemATM::run_impl(const double dt) {
       KOKKOS_LAMBDA(const int i) {
         const int icol = i / nlevs;
         const int ilev = i % nlevs;
-        state(i, state_col_j) = q_tracer(icol, ilev) * state(i, m_state_col);
+        state(i, state_col_j) = q_tracer(icol, ilev);// * state(i, m_state_col);
       });
   }
   // Time loop: mirrors TChem_AtmosphericChemistryE3SM.cpp standalone example.
@@ -392,7 +392,7 @@ void TChemATM::run_impl(const double dt) {
     } else {
       explicit_euler_type::runDeviceBatch(
           policy, tadv, m_state, m_photo_rates, m_external_sources, t_view,
-          dt_view, m_state, m_kmcd);
+          dt_view, m_state, m_workspace, m_kmcd);
     }
     TChem::exec_space().fence();
     tsum = 0;
