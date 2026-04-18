@@ -94,7 +94,7 @@ TChemATM::TChemATM(const ekat::Comm& comm, const ekat::ParameterList& params)
 void TChemATM::create_requests() {
   using namespace ekat::units;
   constexpr auto q_unit = kg / kg;
-  std::cout << "[TChemATM] create_requests\n";
+  // std::cout << "[TChemATM] create_requests\n";
 
   m_grid = m_grids_manager->get_grid("physics");
   EKAT_REQUIRE_MSG(m_grid != nullptr,
@@ -113,11 +113,11 @@ void TChemATM::create_requests() {
 
 
   // Build TChem kinetic model metadata from the configured chemistry file.
-  std::cout << "[TChemATM] KineticModelData\n";
+  // std::cout << "[TChemATM] KineticModelData\n";
   m_kmd = TChem::KineticModelData(chem_file);
-  std::cout << "[TChemATM] createNCAR_KineticModelConstData\n";
+  // std::cout << "[TChemATM] createNCAR_KineticModelConstData\n";
   m_kmcd = TChem::createNCAR_KineticModelConstData<tchem_device_type>(m_kmd);
-  std::cout << "[TChemATM] Done KineticModelData "<<m_kmd.nSpec_ <<"\n";
+  // std::cout << "[TChemATM] Done KineticModelData "<<m_kmd.nSpec_ <<"\n";
 
   // Build m_species_mw indexed by TChem species order.
   // molecular_weights in the parameter list is a sublist mapping
@@ -136,19 +136,19 @@ void TChemATM::create_requests() {
                      "Error! Molecular weight not found for species '" +
                      sname + "' in 'molecular_weights' sublist.\n");
     m_species_mw[i] = mw_list.get<double>(sname);
-    std::cout << "[TChemATM] Molecular weight for species "<< i <<" " << sname << " = " << m_species_mw[i] << " g/mol\n";
+    // std::cout << "[TChemATM] Molecular weight for species "<< i <<" " << sname << " = " << m_species_mw[i] << " g/mol\n";
   }
-  std::cout << "[TChemATM] Done loading molecular weights\n";
+  // std::cout << "[TChemATM] Done loading molecular weights\n";
   m_tchem_ready = true;
-   std::cout << "[TChemATM] Done m_species_mw\n";
+   // std::cout << "[TChemATM] Done m_species_mw\n";
 
   //FIXME: invariants are not tracers.
   for (int i = 0; i < m_kmd.nSpec_ - m_num_invariants; ++i) {
     const std::string sname(&species_names_host(i, 0));
-    std::cout << "[TChemATM] species[" << i << "] = " << sname << "\n";
+    // std::cout << "[TChemATM] species[" << i << "] = " << sname << "\n";
     add_tracer<Updated>(sname, m_grid, q_unit);
   }
-  std::cout << "[TChemATM] Number of tracers added: " << m_kmd.nSpec_ - m_num_invariants << "\n";
+  // std::cout << "[TChemATM] Number of tracers added: " << m_kmd.nSpec_ - m_num_invariants << "\n";
     // Add prescribed constant tracer fields (oxidants).
   // M, N2, O2, H2O, H2, CH4 are computed from T and P at runtime, not registered as fields.
   constexpr int num_tracer_cnst = 3;
@@ -156,11 +156,11 @@ void TChemATM::create_requests() {
     const std::string sname(&species_names_host(m_kmcd.M_index + 6 + j, 0));
     add_field<Updated>(sname, scalar3d_mid, q_unit, grid_name);
   }
-  std::cout << "[TChemATM] Done create_requests\n";
+  // std::cout << "[TChemATM] Done create_requests\n";
 }
 
 void TChemATM::initialize_impl(const RunType /* run_type */) {
-  std::cout << "[TChemATM] initialize_impl\n";
+  // std::cout << "[TChemATM] initialize_impl\n";
   EKAT_REQUIRE_MSG(m_tchem_ready,
                    "Error! TChemATM::initialize_impl called before TChem model initialization.\n");
 
@@ -175,15 +175,16 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   m_state_vec_dim = TChem::Impl::getStateVectorSize(m_kmcd.nSpec);
 
   m_state = explicit_euler_type::real_type_2d_view_type("tchem_state", m_nbatch, m_state_vec_dim);
-  m_photo_rates = explicit_euler_type::real_type_2d_view_type("tchem_photo_rates", m_nbatch, m_kmcd.nReac);
+  const int m_photo_reactions= 22;
+  m_photo_rates = explicit_euler_type::real_type_2d_view_type("tchem_photo_rates", m_nbatch, m_photo_reactions);
   m_external_sources = explicit_euler_type::real_type_2d_view_type("tchem_external_sources", m_nbatch, m_n_active_vars);
   m_t = explicit_euler_type::real_type_1d_view_type("tchem_time", m_nbatch);
   m_dt_view = explicit_euler_type::real_type_1d_view_type("tchem_dt", m_nbatch);
   m_tadv = TChem::time_advance_type_1d_view("tchem_tadv", m_nbatch);
 
   // Read solver/time-stepping parameters from the namelist.
-  m_solver_type          = m_params.get<std::string>("solver_type", "explicit_euler");
-  m_max_time_iterations  = m_params.get<int>("max_time_iterations", 1000);
+  m_solver_type          = m_params.get<std::string>("solver_type", "implicit_euler");
+  m_max_time_iterations  = m_params.get<int>("max_time_iterations", 100);
   m_jacobian_interval    = m_params.get<int>("jacobian_interval", 1);
   m_dtmin_sub            = m_params.get<double>("dtmin_sub", 1e-4);
   m_dtmax_sub            = m_params.get<double>("dtmax_sub", -1.0);
@@ -219,7 +220,7 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     Kokkos::deep_copy(m_tol_time, tol_time_host);
     Kokkos::deep_copy(m_fac, 0.0);
   }
-  std::cout << "[TChemATM] Done initialize_impl\n";
+  // std::cout << "[TChemATM] Done initialize_impl\n";
 }
 
 int TChemATM::get_len_temporary_views() {
@@ -229,10 +230,12 @@ int TChemATM::get_len_temporary_views() {
 void TChemATM::init_temporary_views() {}
 
 void TChemATM::run_impl(const double dt) {
-  std::cout << "[TChemATM] run_impl with dt = " << dt << "\n";
+  
+
+  // std::cout << "[TChemATM] run_impl with dt = " << dt << "\n";
   EKAT_REQUIRE_MSG(m_tchem_ready,
                    "Error! TChemATM::run_impl called before TChem model initialization.\n");
-
+ 
   using ordinal_type = TChem::ordinal_type;
 
   if (m_nbatch == 0) {
@@ -270,7 +273,7 @@ void TChemATM::run_impl(const double dt) {
   TChem::time_advance_type tadv_default;
   tadv_default._tbeg = 0;
   tadv_default._tend = dt;
-  tadv_default._dt   = dt/100;
+  tadv_default._dt   = dt;
   tadv_default._dtmin = dt/1000;
   tadv_default._dtmax = dtmax_sub;
   tadv_default._max_num_newton_iterations = m_params.get<int>("max_newton_iterations", 100);
@@ -278,26 +281,35 @@ void TChemATM::run_impl(const double dt) {
   tadv_default._jacobian_interval = m_jacobian_interval;
   Kokkos::deep_copy(m_tadv, tadv_default);
 
-  std::cout << "[TChemATM] Starting TChem run\n";
+  // std::cout << "[TChemATM] Starting TChem run\n";
 
   // Populate TChem state pressure/temperature from EAMxx physics fields.
   fill_state_column_from_field(state, p_mid, nlevs, m_nbatch, 1,
                                "tchem_init_state_p");
   fill_state_column_from_field(state, t_mid, nlevs, m_nbatch, 2,
                                "tchem_init_state_t");
-  std::cout << "[TChemATM] Done fill_state_column_from_field\n";
+  // std::cout << "[TChemATM] Done fill_state_column_from_field\n";
   const auto species_names_host = m_kmd.sNames_.view_host();
   for (int ivar = 0; ivar < m_kmd.nSpec_-m_num_invariants; ++ivar) {
     const auto& tracer_name = std::string(&species_names_host(ivar, 0));
-    std::cout << "[TChemATM] Filling state column for tracer " << tracer_name << "\n";
+    // std::cout << "[TChemATM] Filling state column for tracer " << tracer_name << "\n";
     const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
     
     fill_state_column_from_wet_mmr_field(state, q_tracer, qv, nlevs, m_nbatch,
                                          ivar + 3, m_species_mw[ivar],
                                          "tchem_init_state_tracer");
+    // if (ivar == 0) {
+    //   TChem::exec_space().fence();
+    //   auto state_host = Kokkos::create_mirror_view_and_copy(
+    //       Kokkos::HostSpace(), state);
+    //   std::cout << "[TChemATM] O3 VMR col 0 (before TChem):";
+    //   for (int ilev = 0; ilev < state_host.extent(0); ++ilev)
+    //     std::cout << " " << state_host(ilev, ivar + 3);
+    //   std::cout << "\n";
+    // }
   }
-  std::cout << "[TChemATM] Done fill_state_column_from_wet_mmr_field\n";
-
+  // std::cout << "[TChemATM] Done fill_state_column_from_wet_mmr_field\n";
+ #if 1
      // conversion factor for Pascals to dyne/cm^2
   constexpr Real Pa_xfac = 10.0;
   // presumably, the boltzmann constant, in CGS units
@@ -330,7 +342,7 @@ void TChemATM::run_impl(const double dt) {
 
   for (int j = 0; j < num_tracer_cnst; ++j) {
     const auto& tracer_name = std::string(&species_names_host(m_kmcd.M_index + 6 + j, 0));
-    std::cout << "[TChemATM] Filling state column for invariant tracer " << tracer_name << "\n";
+    // std::cout << "[TChemATM] Filling state column for invariant tracer " << tracer_name << "\n";
     const auto& q_tracer = get_field_out(tracer_name).get_view<Real **>();
     const int state_col_j = m_state_col + 6 + j;
     Kokkos::parallel_for(
@@ -353,6 +365,7 @@ void TChemATM::run_impl(const double dt) {
   const auto kmcd        = m_kmcd;
   for (int iter = 0; iter < m_max_time_iterations && tsum <= dt * 0.9999;
        ++iter) {
+#if 1
     if (m_solver_type == "implicit_euler") {
       implicit_euler_type::runDeviceBatch(
           policy, tol_newton, tol_time, fac, tadv, m_state, m_photo_rates,
@@ -379,6 +392,21 @@ void TChemATM::run_impl(const double dt) {
     Kokkos::fence();
     tsum /= m_nbatch;
   }
+#endif
+  // Print O3 VMR for column 0 after the TChem run.
+  // for (int ivar = 0; ivar < m_kmcd.nSpec - m_kmcd.nConstSpec; ++ivar) {
+  //   const std::string sname(&species_names_host(ivar, 0));
+  //   if (ivar == 0) {
+  //     TChem::exec_space().fence();
+  //     auto m_state_host = Kokkos::create_mirror_view_and_copy(
+  //         Kokkos::HostSpace(), m_state);
+  //     std::cout << "[TChemATM] O3 VMR col 0 (after TChem):";
+  //     for (int ilev = 0; ilev < nlevs; ++ilev)
+  //       std::cout << " " << m_state_host(ilev, ivar + 3);
+  //     std::cout << "\n";
+  //     break;
+  //   }
+  // }
 
   // After the TChem run, convert dry-vmr state back to wet-mmr tracer fields.
   for (int ivar = 0; ivar < m_kmcd.nSpec - m_kmcd.nConstSpec; ++ivar) {
@@ -399,7 +427,7 @@ void TChemATM::run_impl(const double dt) {
   // Add other solvers. 
   // modify TChem-atm functions signature to pass tem and pressure
   // connect to aerosols. 
-  
+#endif  
 }
 
 }  // namespace scream
