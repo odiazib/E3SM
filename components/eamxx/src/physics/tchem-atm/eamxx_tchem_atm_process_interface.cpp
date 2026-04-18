@@ -437,6 +437,7 @@ void TChemATM::run_impl(const double dt) {
   // Run tropopause 
   // Run stratoshere
   // get num_tracer_cnst
+  // make a single test for case w aerosols.
   // get photolysis rates.
   // get external sources.
   // Future:
