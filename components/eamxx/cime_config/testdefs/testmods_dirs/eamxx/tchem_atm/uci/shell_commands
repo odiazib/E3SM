@@ -1,6 +1,6 @@
 alias ATMCHANGE='$CIMEROOT/../components/eamxx/scripts/atmchange'
 ##UCI has 46 tracers. FIXME: get this information from tchem. 
-./xmlchange SCREAM_CMAKE_OPTIONS="SCREAM_NP 4 SCREAM_NUM_VERTICAL_LEV 80 SCREAM_NUM_TRACERS 56"
+./xmlchange SCREAM_CMAKE_OPTIONS="SCREAM_NP 4 SCREAM_NUM_VERTICAL_LEV 80 SCREAM_NUM_TRACERS 83"
 
 #------------------------------------------------------
 # Add microphysics process
