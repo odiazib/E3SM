@@ -63,6 +63,10 @@ class TChemATM : public AtmosphereProcess {
   explicit_euler_type::real_type_1d_view_type m_tol_newton;
   explicit_euler_type::real_type_2d_view_type m_tol_time;
   explicit_euler_type::real_type_2d_view_type m_fac;
+  // Pre-allocated global workspace [nbatch x per_team_extent].
+  // Used when m_use_shared_workspace is false.
+  explicit_euler_type::real_type_2d_view_type m_workspace;
+  bool m_use_shared_workspace = true;
 };
 
 }  // namespace scream
