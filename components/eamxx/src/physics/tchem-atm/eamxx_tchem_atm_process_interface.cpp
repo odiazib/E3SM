@@ -151,11 +151,11 @@ void TChemATM::create_requests() {
   std::cout << "[TChemATM] Number of tracers added: " << m_kmd.nSpec_ - m_num_invariants << "\n";
     // Add prescribed constant tracer fields (oxidants).
   // M, N2, O2, H2O, H2, CH4 are computed from T and P at runtime, not registered as fields.
-  constexpr int num_tracer_cnst = 3;
-  for (int j = 0; j < num_tracer_cnst; ++j) {
-    const std::string sname(&species_names_host(m_kmcd.M_index + 6 + j, 0));
-    add_field<Updated>(sname, scalar3d_mid, q_unit, grid_name);
-  }
+  // constexpr int num_tracer_cnst = 3;
+  // for (int j = 0; j < num_tracer_cnst; ++j) {
+  //   const std::string sname(&species_names_host(m_kmcd.M_index + 6 + j, 0));
+  //   add_field<Updated>(sname, scalar3d_mid, q_unit, grid_name);
+  // }
   // std::cout << "[TChemATM] Done create_requests\n";
 }
 
@@ -335,7 +335,7 @@ void TChemATM::run_impl(const double dt) {
   // Compute invariants:
   // step 1: M [molecules/cm^3] = Pa_xfac * P [Pa] / (boltz_cgs * T [K])
   const int m_state_col = m_kmcd.M_index + 3;
-  constexpr int num_tracer_cnst = 3;
+  // constexpr int num_tracer_cnst = 3;
   Kokkos::parallel_for(
       "tchem_compute_M", Kokkos::RangePolicy<TChem::exec_space>(0, m_nbatch),
       KOKKOS_LAMBDA(const int i) {
@@ -358,19 +358,19 @@ void TChemATM::run_impl(const double dt) {
       });
  
 
-  for (int j = 0; j < num_tracer_cnst; ++j) {
-    const auto& tracer_name = std::string(&species_names_host(m_kmcd.M_index + 6 + j, 0));
-    // std::cout << "[TChemATM] Filling state column for invariant tracer " << tracer_name << "\n";
-    const auto& q_tracer = get_field_out(tracer_name).get_view<Real **>();
-    const int state_col_j = m_state_col + 6 + j;
-    Kokkos::parallel_for(
-      "tchem_compute_cnst_tracer", Kokkos::RangePolicy<TChem::exec_space>(0, m_nbatch),
-      KOKKOS_LAMBDA(const int i) {
-        const int icol = i / nlevs;
-        const int ilev = i % nlevs;
-        state(i, state_col_j) = q_tracer(icol, ilev);// * state(i, m_state_col);
-      });
-  }
+  // for (int j = 0; j < num_tracer_cnst; ++j) {
+  //   const auto& tracer_name = std::string(&species_names_host(m_kmcd.M_index + 6 + j, 0));
+  //   // std::cout << "[TChemATM] Filling state column for invariant tracer " << tracer_name << "\n";
+  //   const auto& q_tracer = get_field_out(tracer_name).get_view<Real **>();
+  //   const int state_col_j = m_state_col + 6 + j;
+  //   Kokkos::parallel_for(
+  //     "tchem_compute_cnst_tracer", Kokkos::RangePolicy<TChem::exec_space>(0, m_nbatch),
+  //     KOKKOS_LAMBDA(const int i) {
+  //       const int icol = i / nlevs;
+  //       const int ilev = i % nlevs;
+  //       state(i, state_col_j) = q_tracer(icol, ilev);// * state(i, m_state_col);
+  //     });
+  // }
   // Time loop: mirrors TChem_AtmosphericChemistryE3SM.cpp standalone example.
   // Solver type and time-stepping parameters are controlled via namelist.
   TChem::real_type tsum(0);
@@ -433,15 +433,16 @@ void TChemATM::run_impl(const double dt) {
   } 
 
   //TODO:
-  // new to update values to use mmr instead of vmr
-  // run CIME test with traces.
   // run only w TChem-atm traces it looks like I also need mam4xx tracers. 
   // Run tropopause 
   // Run stratoshere
+  // get num_tracer_cnst
+  // get photolysis rates.
+  // get external sources.
   // Future:
-  // Add other solvers. 
   // modify TChem-atm functions signature to pass tem and pressure
   // connect to aerosols. 
+  // use Analitycal Jacobian.
 #endif  
 }
 
