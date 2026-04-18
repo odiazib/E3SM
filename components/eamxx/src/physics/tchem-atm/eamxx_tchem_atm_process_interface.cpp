@@ -192,6 +192,7 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   m_rtol_newton          = m_params.get<double>("rtol_newton", 1e-6);
   m_atol_time            = m_params.get<double>("atol_time", 1e-12);
   m_rtol_time            = m_params.get<double>("rtol_time", 1e-4);
+  m_use_shared_workspace = m_params.get<bool>("use_shared_workspace", false);
   std::cout << "[TChemATM] solver_type = " << m_solver_type << "\n";
 
   // Allocate and populate tolerance/scaling views for implicit solvers.
@@ -219,6 +220,19 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     Kokkos::deep_copy(m_tol_newton, tol_newton_host);
     Kokkos::deep_copy(m_tol_time, tol_time_host);
     Kokkos::deep_copy(m_fac, 0.0);
+  }
+
+  if (!m_use_shared_workspace) {
+    TChem::ordinal_type per_team_extent = 0;
+    if (m_solver_type == "implicit_euler") {
+      per_team_extent = implicit_euler_type::getWorkSpaceSize(m_kmcd);
+    } else if (m_solver_type == "trbdf2") {
+      per_team_extent = trbdf2_type::getWorkSpaceSize(m_kmcd);
+    } else {
+      per_team_extent = explicit_euler_type::getWorkSpaceSize(m_kmcd);
+    }
+    m_workspace = explicit_euler_type::real_type_2d_view_type(
+        "tchem_workspace", m_nbatch, per_team_extent);
   }
   // std::cout << "[TChemATM] Done initialize_impl\n";
 }
@@ -259,9 +273,13 @@ void TChemATM::run_impl(const double dt) {
   } else {
     per_team_extent = explicit_euler_type::getWorkSpaceSize(m_kmcd);
   }
-  const ordinal_type per_team_scratch =
-      TChem::Scratch<TChem::real_type_1d_view>::shmem_size(per_team_extent);
-  policy.set_scratch_size(1, Kokkos::PerTeam(per_team_scratch));
+  //TODO: add the workspace for implicit_euler
+  // use the use_shared_workspace option to turn on and offf
+  if (m_use_shared_workspace) {
+    const ordinal_type per_team_scratch =
+        TChem::Scratch<TChem::real_type_1d_view>::shmem_size(per_team_extent);
+    policy.set_scratch_size(1, Kokkos::PerTeam(per_team_scratch));
+  }
 
   Kokkos::deep_copy(m_photo_rates, 0.0);
   Kokkos::deep_copy(m_external_sources, 0.0);
@@ -356,28 +374,25 @@ void TChemATM::run_impl(const double dt) {
   // Time loop: mirrors TChem_AtmosphericChemistryE3SM.cpp standalone example.
   // Solver type and time-stepping parameters are controlled via namelist.
   TChem::real_type tsum(0);
-  const auto tadv        = m_tadv;
-  const auto t_view      = m_t;
-  const auto dt_view     = m_dt_view;
-  const auto tol_newton  = m_tol_newton;
-  const auto tol_time    = m_tol_time;
-  const auto fac         = m_fac;
-  const auto kmcd        = m_kmcd;
+  const auto& tadv        = m_tadv;
+  const auto& t_view      = m_t;
+  const auto& dt_view     = m_dt_view;
+
   for (int iter = 0; iter < m_max_time_iterations && tsum <= dt * 0.9999;
        ++iter) {
 #if 1
     if (m_solver_type == "implicit_euler") {
       implicit_euler_type::runDeviceBatch(
-          policy, tol_newton, tol_time, fac, tadv, m_state, m_photo_rates,
-          m_external_sources, t_view, dt_view, m_state, kmcd);
+          policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
+          m_external_sources, t_view, dt_view, m_state, m_workspace, m_kmcd);
     } else if (m_solver_type == "trbdf2") {
       trbdf2_type::runDeviceBatch(
-          policy, tol_newton, tol_time, fac, tadv, m_state, m_photo_rates,
-          m_external_sources, t_view, dt_view, m_state, kmcd);
+          policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
+          m_external_sources, t_view, dt_view, m_state, m_kmcd);
     } else {
       explicit_euler_type::runDeviceBatch(
           policy, tadv, m_state, m_photo_rates, m_external_sources, t_view,
-          dt_view, m_state, kmcd);
+          dt_view, m_state, m_kmcd);
     }
     TChem::exec_space().fence();
     tsum = 0;
