@@ -94,6 +94,8 @@ TChemATM::TChemATM(const ekat::Comm& comm, const ekat::ParameterList& params)
 void TChemATM::create_requests() {
   using namespace ekat::units;
   constexpr auto q_unit = kg / kg;
+  // Define the different field layouts that will be used for this process
+  using namespace ShortFieldTagsNames;
   // std::cout << "[TChemATM] create_requests\n";
 
   m_grid = m_grids_manager->get_grid("physics");
@@ -106,7 +108,7 @@ void TChemATM::create_requests() {
                    "Error! Missing required parameter 'chem_file' for tchem_atm.\n");
 
   const auto& grid_name = m_grid->name();
-  const auto scalar3d_mid = m_grid->get_3d_scalar_layout(true);
+  const auto scalar3d_mid = m_grid->get_3d_scalar_layout(LEV);
   add_field<Required>("p_mid", scalar3d_mid, Pa, grid_name);
   add_field<Required>("T_mid", scalar3d_mid, K, grid_name);
   add_field<Required>("qv", scalar3d_mid, q_unit, grid_name);
@@ -433,9 +435,9 @@ void TChemATM::run_impl(const double dt) {
   } 
 
   //TODO:
-  // run only w TChem-atm traces it looks like I also need mam4xx tracers. 
   // Run tropopause 
   // Run stratoshere
+  // Look at Tines and see if I can only solve ODEs that I needed
   // get num_tracer_cnst
   // make a single test for case w aerosols.
   // get photolysis rates.
