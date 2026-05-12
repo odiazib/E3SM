@@ -1,6 +1,8 @@
 #include "eamxx_tchem_atm_process_interface.hpp"
 
 #include <ekat_assert.hpp>
+#include <ekat_team_policy_utils.hpp>
+#include <mam4xx/mam4.hpp>
 #include "share/physics/eamxx_common_physics_functions.hpp"
 
 namespace scream {
@@ -94,6 +96,7 @@ TChemATM::TChemATM(const ekat::Comm& comm, const ekat::ParameterList& params)
 void TChemATM::create_requests() {
   using namespace ekat::units;
   constexpr auto q_unit = kg / kg;
+  using namespace ShortFieldTagsNames;
   // std::cout << "[TChemATM] create_requests\n";
 
   m_grid = m_grids_manager->get_grid("physics");
@@ -106,10 +109,13 @@ void TChemATM::create_requests() {
                    "Error! Missing required parameter 'chem_file' for tchem_atm.\n");
 
   const auto& grid_name = m_grid->name();
-  const auto scalar3d_mid = m_grid->get_3d_scalar_layout(true);
+  const auto scalar3d_mid = m_grid->get_3d_scalar_layout(LEV);
+  const FieldLayout scalar3d_int = m_grid->get_3d_scalar_layout(ILEV);
   add_field<Required>("p_mid", scalar3d_mid, Pa, grid_name);
   add_field<Required>("T_mid", scalar3d_mid, K, grid_name);
   add_field<Required>("qv", scalar3d_mid, q_unit, grid_name);
+  add_field<Required>("p_int", scalar3d_int, Pa, grid_name);
+  add_field<Required>("pseudo_density_dry", scalar3d_mid, Pa, grid_name);
 
 
   // Build TChem kinetic model metadata from the configured chemistry file.
@@ -182,6 +188,12 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   m_dt_view = explicit_euler_type::real_type_1d_view_type("tchem_dt", m_nbatch);
   m_tadv = TChem::time_advance_type_1d_view("tchem_tadv", m_nbatch);
 
+  // Temporary views for tropopause computation
+  m_dz         = view_2d("tchem_dz",         m_ncols, m_nlevs);
+  m_z_iface    = view_2d("tchem_z_iface",    m_ncols, m_nlevs + 1);
+  m_z_mid      = view_2d("tchem_z_mid",      m_ncols, m_nlevs);
+  m_qv_dry     = view_2d("tchem_qv_dry",     m_ncols, m_nlevs);
+  m_ilev_tropp = view_1d_int("tchem_ilev_tropp", m_ncols);
   // Read solver/time-stepping parameters from the namelist.
   m_solver_type          = m_params.get<std::string>("solver_type", "implicit_euler");
   m_max_time_iterations  = m_params.get<int>("max_time_iterations", 100);
@@ -261,6 +273,71 @@ void TChemATM::run_impl(const double dt) {
   const auto& qv = get_field_in("qv").get_view<const Real **>();
   const int nlevs = m_nlevs;
   const auto state = m_state;
+
+  const auto& p_int     = get_field_in("p_int").get_view<const Real **>();
+  const auto& p_del_dry = get_field_in("pseudo_density_dry").get_view<const Real **>();
+  const int ncols = m_ncols;
+
+  const auto& dz         = m_dz;
+  const auto& z_iface    = m_z_iface;
+  const auto& z_mid      = m_z_mid;
+  const auto& qv_dry     = m_qv_dry;
+  const auto& ilev_tropp = m_ilev_tropp;
+
+  using TPF = ekat::TeamPolicyFactory<KT::ExeSpace>;
+  using PF  = scream::PhysicsFunctions<DefaultDevice>;
+  const auto col_policy = TPF::get_default_team_policy(ncols, nlevs);
+  const Real z_surf = 0.0;
+
+  // Compute dry water vapor mass mixing ratio
+  Kokkos::parallel_for(
+    "tchem_qv_dry", col_policy,
+    KOKKOS_LAMBDA(const ThreadTeam& team) {
+      const int icol = team.league_rank();
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlevs), [&](int kk) {
+        qv_dry(icol, kk) =
+            PF::calculate_drymmr_from_wetmmr(qv(icol, kk), qv(icol, kk));
+      });
+    });
+
+  // Compute layer thickness from dry pseudo-density
+  Kokkos::parallel_for(
+    "tchem_dz", col_policy,
+    KOKKOS_LAMBDA(const ThreadTeam& team) {
+      const int icol = team.league_rank();
+      PF::calculate_dz(team, ekat::subview(p_del_dry, icol),
+                       ekat::subview(p_mid, icol), ekat::subview(t_mid, icol),
+                       ekat::subview(qv_dry, icol), ekat::subview(dz, icol));
+    });
+
+  // Compute interface geopotential heights
+  Kokkos::parallel_for(
+    "tchem_z_int", col_policy,
+    KOKKOS_LAMBDA(const ThreadTeam& team) {
+      const int icol = team.league_rank();
+      PF::calculate_z_int(team, nlevs, ekat::subview(dz, icol),
+                          z_surf, ekat::subview(z_iface, icol));
+    });
+
+  // Compute midpoint geopotential heights
+  Kokkos::parallel_for(
+    "tchem_z_mid", col_policy,
+    KOKKOS_LAMBDA(const ThreadTeam& team) {
+      const int icol = team.league_rank();
+      PF::calculate_z_mid(team, nlevs, ekat::subview(z_iface, icol),
+                          ekat::subview(z_mid, icol));
+    });
+
+  // Compute tropopause level per column using the Reichler et al. [2003] algorithm
+  Kokkos::parallel_for(
+    "tchem_tropopause",
+    Kokkos::RangePolicy<KT::ExeSpace>(0, ncols),
+    KOKKOS_LAMBDA(const int icol) {
+      ilev_tropp(icol) = mam4::aero_rad_props::tropopause_or_quit(
+          ekat::subview(p_mid,   icol), ekat::subview(p_int,   icol),
+          ekat::subview(t_mid,   icol), ekat::subview(z_mid,   icol),
+          ekat::subview(z_iface, icol));
+    });
 
   using policy_type = typename TChem::UseThisTeamPolicy<TChem::exec_space>::type;
 
