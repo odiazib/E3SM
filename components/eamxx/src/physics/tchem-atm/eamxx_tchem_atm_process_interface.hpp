@@ -2,6 +2,7 @@
 #define EAMXX_TCHEM_ATM_PROCESS_INTERFACE_HPP
 #include "share/atm_process/atmosphere_process.hpp"
 #include <ekat_parameter_list.hpp>
+#include <ekat_kokkos_types.hpp>
 #include <TChem.hpp>
 #include <string>
 #include <vector>
@@ -15,6 +16,11 @@ class TChemATM : public AtmosphereProcess {
   using implicit_euler_type  = TChem::AtmosphericChemistryE3SM_ImplicitEuler;
   using trbdf2_type          = TChem::AtmosphericChemistryE3SM;
 
+  using KT          = ekat::KokkosTypes<DefaultDevice>;
+  using view_1d     = typename KT::template view_1d<Real>;
+  using view_2d     = typename KT::template view_2d<Real>;
+  using view_1d_int = typename KT::template view_1d<int>;
+  using ThreadTeam  = Kokkos::TeamPolicy<KT::ExeSpace>::member_type;
   TChemATM(const ekat::Comm& comm, const ekat::ParameterList& params);
 
   std::string name() const override { return "tchem_atm"; }
@@ -67,6 +73,12 @@ class TChemATM : public AtmosphereProcess {
   // Used when m_use_shared_workspace is false.
   explicit_euler_type::real_type_2d_view_type m_workspace;
   bool m_use_shared_workspace = true;
+  // Temporary views for tropopause computation
+  view_2d      m_dz;
+  view_2d      m_z_iface;
+  view_2d      m_z_mid;
+  view_2d      m_qv_dry;
+  view_1d_int  m_ilev_tropp;
 };
 
 }  // namespace scream
