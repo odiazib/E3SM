@@ -79,6 +79,11 @@ class TChemATM : public AtmosphereProcess {
   view_2d      m_z_mid;
   view_2d      m_qv_dry;
   view_1d_int  m_ilev_tropp;
+  // Persistent sample/index views (allocate once in initialize, reuse in run)
+  view_1d_int  m_offsets;
+  view_1d_int  m_sample_icol;
+  view_1d_int  m_sample_ilev;
+  int          m_nsamples = 0;
 };
 
 }  // namespace scream

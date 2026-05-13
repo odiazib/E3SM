@@ -59,7 +59,7 @@ add_subdirectory(${EXTERNALS_SOURCE_DIR}/tchem-atm/src ${CMAKE_BINARY_DIR}/exter
 add_library(eamxx_tchem_atm eamxx_tchem_atm_process_interface.cpp)
 target_compile_definitions(eamxx_tchem_atm PUBLIC EAMXX_HAS_TCHEM_ATM)
 target_include_directories(eamxx_tchem_atm PRIVATE ${EXTERNALS_SOURCE_DIR}/tchem-atm/src/core)
-target_link_libraries(eamxx_tchem_atm PUBLIC tchem_atm eamxx_physics_share csm_share scream_share)
+target_link_libraries(eamxx_tchem_atm PUBLIC tchem_atm mam4xx eamxx_physics_share csm_share scream_share)
 
 if (TARGET eamxx_physics)
   # Add this library to eamxx_physics
