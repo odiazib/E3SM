@@ -9,6 +9,87 @@ namespace scream {
 
 namespace {
 
+  int compute_nsamples(
+    const Kokkos::View<const int*>& ntropopause,
+    const int                       ncol,
+    const int                       nlev,
+    const bool                      above)
+{
+    int nsamples = 0;
+    Kokkos::parallel_reduce(
+        "compute_nsamples",
+        Kokkos::RangePolicy<TChem::exec_space>(0, ncol),
+        KOKKOS_LAMBDA(const int icol, int& partial_sum) {
+            partial_sum += above ? nlev - ntropopause(icol)
+                                 : ntropopause(icol);
+        },
+        nsamples);
+    return nsamples;
+}
+
+void compute_offsets(
+    const Kokkos::View<const int*>& ntropopause,
+    const int                       ncol,
+    const int                       nlev,
+    const Kokkos::View<int*>&       offsets,
+    const bool                      above)
+{
+    Kokkos::parallel_scan(
+        "compute_offsets",
+        Kokkos::RangePolicy<TChem::exec_space>(0, ncol + 1),
+        KOKKOS_LAMBDA(const int icol, int& partial_sum, const bool is_final) {
+            if (is_final) offsets(icol) = partial_sum;
+            if (icol < ncol)
+                partial_sum += above ? nlev - ntropopause(icol)
+                                     : ntropopause(icol);
+        });
+    Kokkos::fence();
+}
+
+void compute_sample_indices(
+    const Kokkos::View<const int*>& ntropopause,
+    const Kokkos::View<const int*>& offsets,
+    const int                       ncol,
+    const int                       nlev,
+    const Kokkos::View<int*>&       sample_icol,
+    const Kokkos::View<int*>&       sample_ilev,
+    const bool                      above)
+{
+    Kokkos::parallel_for(
+        "fill_sample_indices",
+        Kokkos::RangePolicy<TChem::exec_space>(0, ncol),
+        KOKKOS_LAMBDA(const int icol) {
+            const int lev_start = above ? nlev - ntropopause(icol) : 0;
+            const int lev_end   = above ? nlev                     : ntropopause(icol);
+            const int offset    = offsets(icol);
+            for (int ilev = lev_start; ilev < lev_end; ++ilev) {
+                const int isample    = offset + (ilev - lev_start);
+                sample_icol(isample) = icol;
+                sample_ilev(isample) = ilev;
+            }
+        });
+    Kokkos::fence();
+}
+
+template <typename StateViewType, typename SourceViewType>
+void pack_into_state(
+    const StateViewType&            state,
+    const SourceViewType&           src,
+    const Kokkos::View<const int*>& sample_icol,
+    const Kokkos::View<const int*>& sample_ilev,
+    const int                       nsamples,
+    const int                       state_col,
+    const char*                     kernel_name)
+{
+    Kokkos::parallel_for(
+        kernel_name,
+        Kokkos::RangePolicy<TChem::exec_space>(0, nsamples),
+        KOKKOS_LAMBDA(const int isample) {
+            state(isample, state_col) = src(sample_icol(isample),
+                                            sample_ilev(isample));
+        });
+}
+
 template <typename StateViewType, typename SourceViewType>
 void fill_state_column_from_field(const StateViewType& state,
                                   const SourceViewType& src,
@@ -23,6 +104,34 @@ void fill_state_column_from_field(const StateViewType& state,
         const int ilev = i % nlevs;
         state(i, state_col) = src(icol, ilev);
       });
+}
+
+template <typename StateViewType, typename TracerViewType, typename QvViewType>
+void pack_wet_mmr_into_state(
+    const StateViewType&            state,
+    const TracerViewType&           q_tracer,
+    const QvViewType&               qv,
+    const Kokkos::View<const int*>& sample_icol,
+    const Kokkos::View<const int*>& sample_ilev,
+    const int                       nsamples,
+    const int                       state_col,
+    const Real                      species_mw,
+    const char*                     kernel_name)
+{
+    using PF = scream::PhysicsFunctions<DefaultDevice>;
+    constexpr Real air_mw = scream::physics::Constants<Real>::MWdry.value;
+
+    Kokkos::parallel_for(
+        kernel_name,
+        Kokkos::RangePolicy<TChem::exec_space>(0, nsamples),
+        KOKKOS_LAMBDA(const int isample) {
+            const int  icol     = sample_icol(isample);
+            const int  ilev     = sample_ilev(isample);
+            const Real mmr_wet  = q_tracer(icol, ilev);
+            const Real qv_wet   = qv(icol, ilev);
+            const Real mmr_dry  = PF::calculate_drymmr_from_wetmmr(mmr_wet, qv_wet);
+            state(isample, state_col) = mmr_dry * air_mw / species_mw;
+        });
 }
 
     template <typename StateViewType, typename TracerViewType, typename QvViewType>
@@ -47,6 +156,55 @@ void fill_state_column_from_field(const StateViewType& state,
         state(i, state_col) = mmr_dry * air_mw / species_mw;
       });
     }
+
+    template <typename DestViewType, typename StateViewType>
+void unpack_from_state(
+    const DestViewType&             dst,
+    const StateViewType&            state,
+    const Kokkos::View<const int*>& sample_icol,
+    const Kokkos::View<const int*>& sample_ilev,
+    const int                       nsamples,
+    const int                       state_col,
+    const char*                     kernel_name)
+{
+    Kokkos::parallel_for(
+        kernel_name,
+        Kokkos::RangePolicy<TChem::exec_space>(0, nsamples),
+        KOKKOS_LAMBDA(const int isample) {
+            const int icol        = sample_icol(isample);
+            const int ilev        = sample_ilev(isample);
+            dst(icol, ilev) = state(isample, state_col);
+        });
+}
+
+template <typename DestViewType, typename StateViewType, typename QvViewType>
+void unpack_wet_mmr_from_state(
+    const DestViewType&             dst,
+    const StateViewType&            state,
+    const QvViewType&               qv,
+    const Kokkos::View<const int*>& sample_icol,
+    const Kokkos::View<const int*>& sample_ilev,
+    const int                       nsamples,
+    const int                       state_col,
+    const Real                      species_mw,
+    const char*                     kernel_name)
+{
+    using PF = scream::PhysicsFunctions<DefaultDevice>;
+    constexpr Real air_mw = scream::physics::Constants<Real>::MWdry.value;
+
+    Kokkos::parallel_for(
+        kernel_name,
+        Kokkos::RangePolicy<TChem::exec_space>(0, nsamples),
+        KOKKOS_LAMBDA(const int isample) {
+            const int  icol     = sample_icol(isample);
+            const int  ilev     = sample_ilev(isample);
+            const Real qv_wet   = qv(icol, ilev);
+            const Real vmr_dry  = state(isample, state_col);
+            const Real mmr_dry  = vmr_dry * species_mw / air_mw;
+            const Real qv_dry   = PF::calculate_drymmr_from_wetmmr(qv_wet, qv_wet);
+            dst(icol, ilev)     = PF::calculate_wetmmr_from_drymmr(mmr_dry, qv_dry);
+        });
+}
 
     template <typename DestViewType, typename StateViewType>
     void fill_field_from_state_column(const DestViewType& dst,
@@ -194,6 +352,10 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   m_z_mid      = view_2d("tchem_z_mid",      m_ncols, m_nlevs);
   m_qv_dry     = view_2d("tchem_qv_dry",     m_ncols, m_nlevs);
   m_ilev_tropp = view_1d_int("tchem_ilev_tropp", m_ncols);
+  // Allocate persistent index/offset views once here and reuse in run_impl.
+  m_offsets = view_1d_int("tchem_offsets", m_ncols + 1);
+  m_sample_icol = view_1d_int("tchem_sample_icol", m_nbatch);
+  m_sample_ilev = view_1d_int("tchem_sample_ilev", m_nbatch);
   // Read solver/time-stepping parameters from the namelist.
   m_solver_type          = m_params.get<std::string>("solver_type", "implicit_euler");
   m_max_time_iterations  = m_params.get<int>("max_time_iterations", 100);
@@ -339,9 +501,18 @@ void TChemATM::run_impl(const double dt) {
           ekat::subview(z_iface, icol));
     });
 
+
+  const auto& ntropopause = ilev_tropp; // number of levels up to tropopause
+  const int ncol = ncols;
+  const int nlev = nlevs;
+
+  // Choose sampling option (here: sample above-tropopause levels).
+  const bool above = true;
+  m_nsamples = compute_nsamples(ntropopause, ncol, nlev, above);
+
   using policy_type = typename TChem::UseThisTeamPolicy<TChem::exec_space>::type;
 
-  policy_type policy(TChem::exec_space(), m_nbatch, Kokkos::AUTO());
+  policy_type policy(TChem::exec_space(), m_nsamples, Kokkos::AUTO());
   ordinal_type per_team_extent = 0;
    if (m_solver_type == "implicit_euler") {
       per_team_extent = TChem::AtmosphericChemistryE3SM::getWorkSpaceSize(m_kmcd);
@@ -378,21 +549,28 @@ void TChemATM::run_impl(const double dt) {
 
   // std::cout << "[TChemATM] Starting TChem run\n";
 
-  // Populate TChem state pressure/temperature from EAMxx physics fields.
-  fill_state_column_from_field(state, p_mid, nlevs, m_nbatch, 1,
-                               "tchem_init_state_p");
-  fill_state_column_from_field(state, t_mid, nlevs, m_nbatch, 2,
-                               "tchem_init_state_t");
+  // compute offsets into the pre-allocated offsets view
+  compute_offsets(ntropopause, ncol, nlev, m_offsets, above);
+  // fill sample index arrays into the pre-allocated views
+  compute_sample_indices(ntropopause, m_offsets, ncol, nlev, m_sample_icol,
+                         m_sample_ilev, above);
+
+  // Pack pressure and temperature into the state for all selected samples
+  pack_into_state(state, p_mid, m_sample_icol, m_sample_ilev, m_nsamples, 1,
+                  "tchem_init_state_p");
+  pack_into_state(state, t_mid, m_sample_icol, m_sample_ilev, m_nsamples, 2,
+                  "tchem_init_state_t");
+
   // std::cout << "[TChemATM] Done fill_state_column_from_field\n";
   const auto species_names_host = m_kmd.sNames_.view_host();
   for (int ivar = 0; ivar < m_kmd.nSpec_-m_num_invariants; ++ivar) {
     const auto& tracer_name = std::string(&species_names_host(ivar, 0));
     // std::cout << "[TChemATM] Filling state column for tracer " << tracer_name << "\n";
     const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
-    
-    fill_state_column_from_wet_mmr_field(state, q_tracer, qv, nlevs, m_nbatch,
-                                         ivar + 3, m_species_mw[ivar],
-                                         "tchem_init_state_tracer");
+    // Use sampling-aware pack to only pack selected samples (m_sample_icol/ilev)
+    pack_wet_mmr_into_state(state, q_tracer, qv, m_sample_icol, m_sample_ilev,
+                m_nsamples, ivar + 3, m_species_mw[ivar],
+                "tchem_init_state_tracer");
     // if (ivar == 0) {
     //   TChem::exec_space().fence();
     //   auto state_host = Kokkos::create_mirror_view_and_copy(
@@ -504,9 +682,10 @@ void TChemATM::run_impl(const double dt) {
   for (int ivar = 0; ivar < m_kmcd.nSpec - m_kmcd.nConstSpec; ++ivar) {
     const auto& tracer_name = std::string(&species_names_host(ivar, 0));
     const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
-    fill_wet_mmr_field_from_state_column(q_tracer, state, qv, nlevs, m_nbatch,
-                                         ivar + 3, m_species_mw[ivar],
-                                         "tchem_copy_back_state_tracer");
+    // Unpack only sampled entries from TChem state back into wet-mmr tracer field
+    unpack_wet_mmr_from_state(q_tracer, state, qv, m_sample_icol, m_sample_ilev,
+                  m_nsamples, ivar + 3, m_species_mw[ivar],
+                  "tchem_copy_back_state_tracer");
   } 
 
   //TODO:
