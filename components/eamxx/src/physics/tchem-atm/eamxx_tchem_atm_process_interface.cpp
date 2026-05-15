@@ -59,9 +59,10 @@ void compute_sample_indices(
         "fill_sample_indices",
         Kokkos::RangePolicy<TChem::exec_space>(0, ncol),
         KOKKOS_LAMBDA(const int icol) {
-            const int lev_start = above ? nlev - ntropopause(icol) : 0;
+            const int lev_start = above ? ntropopause(icol) : 0;
             const int lev_end   = above ? nlev                     : ntropopause(icol);
             const int offset    = offsets(icol);
+            printf("compute_sample_indices: icol = %d, lev_start = %d, lev_end = %d, offset = %d, ntropopause = %d\n", icol, lev_start, lev_end, offset, ntropopause(icol));
             for (int ilev = lev_start; ilev < lev_end; ++ilev) {
                 const int isample    = offset + (ilev - lev_start);
                 sample_icol(isample) = icol;
@@ -85,6 +86,7 @@ void pack_into_state(
         kernel_name,
         Kokkos::RangePolicy<TChem::exec_space>(0, nsamples),
         KOKKOS_LAMBDA(const int isample) {
+          // printf("pack_into_state: isample = %d, state_col = %d, sample_icol = %d, sample_ilev = %d\n", isample, state_col, sample_icol(isample), sample_ilev(isample));
             state(isample, state_col) = src(sample_icol(isample),
                                             sample_ilev(isample));
         });
@@ -306,13 +308,17 @@ void TChemATM::create_requests() {
   m_tchem_ready = true;
    // std::cout << "[TChemATM] Done m_species_mw\n";
 
+  // Read sampling configuration: sample above tropopause (true) or below (false)
+  m_run_troposhere = m_params.get<bool>("m_run_troposhere", true);
+  if (m_atm_logger) m_atm_logger->info("[TChemATM] m_run_troposhere = " + std::to_string(m_run_troposhere));
+
   //FIXME: invariants are not tracers.
   for (int i = 0; i < m_kmd.nSpec_ - m_num_invariants; ++i) {
     const std::string sname(&species_names_host(i, 0));
     // std::cout << "[TChemATM] species[" << i << "] = " << sname << "\n";
     add_tracer<Updated>(sname, m_grid, q_unit);
   }
-  std::cout << "[TChemATM] Number of tracers added: " << m_kmd.nSpec_ - m_num_invariants << "\n";
+  if (m_atm_logger) m_atm_logger->info("[TChemATM] Number of tracers added: " + std::to_string(m_kmd.nSpec_ - m_num_invariants));
     // Add prescribed constant tracer fields (oxidants).
   // M, N2, O2, H2O, H2, CH4 are computed from T and P at runtime, not registered as fields.
   constexpr int num_tracer_cnst = 3;
@@ -367,7 +373,7 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   m_atol_time            = m_params.get<double>("atol_time", 1e-12);
   m_rtol_time            = m_params.get<double>("rtol_time", 1e-4);
   m_use_shared_workspace = m_params.get<bool>("use_shared_workspace", true);
-  std::cout << "[TChemATM] solver_type = " << m_solver_type << "\n";
+  if (m_atm_logger) m_atm_logger->info("[TChemATM] solver_type = " + m_solver_type);
 
   // Allocate and populate tolerance/scaling views for implicit solvers.
   if (m_solver_type == "implicit_euler" || m_solver_type == "trbdf2") {
@@ -506,12 +512,14 @@ void TChemATM::run_impl(const double dt) {
   const int ncol = ncols;
   const int nlev = nlevs;
 
-  // Choose sampling option (here: sample above-tropopause levels).
-  const bool above = true;
+  // Choose sampling option: sample above or below tropopause according to
+  // the 'm_run_troposhere' parameter (true = above, false = below).
+  const bool above = m_run_troposhere;
   m_nsamples = compute_nsamples(ntropopause, ncol, nlev, above);
+  if (m_atm_logger) m_atm_logger->info("[TChemATM] m_nsamples = " + std::to_string(m_nsamples));
 
   using policy_type = typename TChem::UseThisTeamPolicy<TChem::exec_space>::type;
-
+ 
   policy_type policy(TChem::exec_space(), m_nsamples, Kokkos::AUTO());
   ordinal_type per_team_extent = 0;
    if (m_solver_type == "implicit_euler") {
@@ -554,6 +562,37 @@ void TChemATM::run_impl(const double dt) {
   // fill sample index arrays into the pre-allocated views
   compute_sample_indices(ntropopause, m_offsets, ncol, nlev, m_sample_icol,
                          m_sample_ilev, above);
+                         
+  // print m_offsets for debugging
+  auto offsets_host = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), m_offsets);
+  auto ntropopause_host = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), ntropopause);
+  // std::cout << "[TChemATM] Offsets: ";
+  // for (int i = 0; i <= ncol; ++i)
+    // std::cout << "offsets_host (" << i << ") = " << offsets_host(i) << ", ntropopause_host (" << i << ") = " << ntropopause_host(i) << "\n  ";
+  // std::cout << "\n";  
+
+  // auto sample_icol_host =
+      // Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), m_sample_icol);
+  // auto sample_ilev_host =
+      // Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), m_sample_ilev);
+  // std::cout << "[TChemATM] Sample indices (isample, icol, ilev):\n";
+  // for (int isample = 0; isample < m_nsamples; ++isample) {
+    // std::cout << "  (" << isample << ", " << sample_icol_host(isample)
+              // << ", " << sample_ilev_host(isample) << ")\n";
+  // }
+
+  // std::cout << "  (" << 483 << ", " << sample_icol_host(483)
+  //             << ", " << sample_ilev_host(483) << ")\n";
+  // for (int isample = 0; isample < m_nsamples; ++isample) {
+  //   if (sample_ilev_host(isample) < ntropopause_host(sample_icol_host(isample))) {
+  //     std::cout << "  stratosphere sample: (" << isample << ", " << sample_icol_host(isample)
+  //               << ", " << sample_ilev_host(isample) << ")\n";
+  //   }
+  // }  
+
+
+
+  Kokkos::fence();
 
   // Pack pressure and temperature into the state for all selected samples
   pack_into_state(state, p_mid, m_sample_icol, m_sample_ilev, m_nsamples, 1,
