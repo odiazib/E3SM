@@ -3,12 +3,114 @@
 #include <ekat_assert.hpp>
 #include <ekat_team_policy_utils.hpp>
 #include <mam4xx/mam4.hpp>
+#include <mam4xx/mo_photo.hpp>
+namespace scream {
+namespace impl {
+using HostViewInt1D = mam4::DeviceType::view_1d<int>::host_mirror_type;
+mam4::mo_photo::PhotoTableData read_photo_table(const std::string &rsf_file,
+                        const std::string &xs_long_file);
+mam4::mo_photo::PhotoTableData read_photo_table(
+  const std::string &rsf_file, const std::string &xs_long_file,
+  const std::vector<std::string> &rxt_names, int numj,
+  const HostViewInt1D &lng_indexer_h);
+} // namespace impl
+} // namespace scream
 #include "share/physics/eamxx_common_physics_functions.hpp"
 
 namespace scream {
 
 namespace {
 
+void modify_photo_table_pht_alias_mult_1(mam4::mo_photo::PhotoTableData &table_data) {
+  constexpr int phtcnt = mam4::mo_photo::phtcnt;
+  auto pht_alias_mult_host = Kokkos::create_mirror_view(table_data.pht_alias_mult_1);
+
+  for (int i = 0; i < phtcnt; ++i) {
+    pht_alias_mult_host(i) = 1.0;
+  }
+  pht_alias_mult_host(19) = 0.0004;
+  pht_alias_mult_host(20) = 0.0004;
+  pht_alias_mult_host(21) = 0.0004;
+
+  Kokkos::deep_copy(table_data.pht_alias_mult_1, pht_alias_mult_host);
+}
+
+  // MAM4xx E3SM uci photolysis table reader.
+mam4::mo_photo::PhotoTableData read_photo_table_uci(
+    const std::string &rsf_file, const std::string &xs_long_file) {
+  
+  using HostViewInt1D = mam4::DeviceType::view_1d<int>::host_mirror_type;
+  const int phtcnt = mam4::mo_photo::phtcnt;
+  HostViewInt1D lng_indexer_h("lng_indexer", phtcnt);
+
+  std::vector<std::string> rxt_names = {
+  "jo1dU", "jo2_b", "jh2o2", "jch2o_a",
+  "jch2o_b", "jch3ooh", "jc2h5ooh", "jno2",
+  "jno3_a", "jno3_b", "jn2o5_a", "jn2o5_b",
+  "jhno3", "jho2no2_a", "jho2no2_b", "jch3cho",
+  "jpan", "jacet", "jmvk", "jsoa_a1",
+  "jsoa_a2", "jsoa_a3"
+  };
+  const std::vector<std::string> pht_alias_lst_2 = {
+    "jo3_a",   // 0
+    "NONE",    // 1
+    "NONE",    // 2
+    "NONE",    // 3
+    "NONE",    // 4
+    "NONE",    // 5
+    "jch3ooh", // 6
+    "NONE",    // 7
+    "NONE",    // 8
+    "NONE",    // 9
+    "NONE",    // 10
+    "NONE",    // 11
+    "NONE",    // 12
+    "NONE",    // 13
+    "NONE",    // 14
+    "NONE",    // 15
+    "NONE",    // 16
+    "NONE",    // 17
+    "NONE",    // 18
+    "jno2",    // 19
+    "jno2",    // 20
+    "jno2"     // 21
+};
+
+  std::vector<int> photo_inti = {
+    1, 2, 3, 4, 5, 6, 6, 7, 8, 9,
+    10, 11, 12, 13, 14, 15, 16, 17, 18, 7,
+    7, 7
+  };
+  for (int i = 0; i < phtcnt; ++i) {
+    // Fortran to C++
+    lng_indexer_h(i) = photo_inti[i]-1;
+  }
+  int numj = 0;
+  std::vector<std::string>  rxt_names_read{};
+  for (int m = 0; m < phtcnt; ++m) {
+    if (lng_indexer_h(m) > 0) {
+        bool already_seen = false;
+        for (int k = 0; k < m; ++k) {
+            if (lng_indexer_h(k) == lng_indexer_h(m)) {
+                already_seen = true;
+                break;
+            }
+        }
+        if (already_seen) continue;
+        if (pht_alias_lst_2[m] != "NONE") {
+          rxt_names_read.push_back(pht_alias_lst_2[m]);
+        } else {
+          rxt_names_read.push_back(rxt_names[m]); 
+        }
+        numj++;
+    }
+  }
+
+  auto table = scream::impl::read_photo_table(rsf_file, xs_long_file,
+                                              rxt_names_read, numj, lng_indexer_h);
+  modify_photo_table_pht_alias_mult_1(table);
+  return table;
+}
   int compute_nsamples(
     const Kokkos::View<const int*>& ntropopause,
     const int                       ncol,
@@ -271,11 +373,17 @@ void TChemATM::create_requests() {
   const auto& grid_name = m_grid->name();
   const auto scalar3d_mid = m_grid->get_3d_scalar_layout(LEV);
   const FieldLayout scalar3d_int = m_grid->get_3d_scalar_layout(ILEV);
+  const auto scalar2d = m_grid->get_2d_scalar_layout();
   add_field<Required>("p_mid", scalar3d_mid, Pa, grid_name);
   add_field<Required>("T_mid", scalar3d_mid, K, grid_name);
   add_field<Required>("qv", scalar3d_mid, q_unit, grid_name);
   add_field<Required>("p_int", scalar3d_int, Pa, grid_name);
   add_field<Required>("pseudo_density_dry", scalar3d_mid, Pa, grid_name);
+  // Photo-table inputs (surface albedo, solar zenith, cloud and liquid)
+  add_field<Required>("sfc_alb_dir_vis", scalar2d, none, grid_name);
+  add_field<Required>("cosine_solar_zenith_angle", scalar2d, none, grid_name);
+  add_field<Required>("qc", scalar3d_mid, q_unit, grid_name);
+  add_field<Required>("cldfrac_tot", scalar3d_mid, none, grid_name);
 
 
   // Build TChem kinetic model metadata from the configured chemistry file.
@@ -414,6 +522,28 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     m_workspace = explicit_euler_type::real_type_2d_view_type(
         "tchem_workspace", m_nbatch, 10*per_team_extent);
   }
+  // Photo table initialization (optional)
+  const std::string rsf_file = m_params.get<std::string>("mam4_rsf_file", "");
+  const std::string xs_long_file = m_params.get<std::string>("mam4_xs_long_file", "");
+  if (!rsf_file.empty() && !xs_long_file.empty()) {
+    m_photo_table = read_photo_table_uci(rsf_file, xs_long_file);
+    m_photo_table_len = mam4::mo_photo::get_photo_table_work_len(m_photo_table);
+    m_work_photo_table = view_2d("tchem_photo_work", m_ncols, m_photo_table_len);
+    // allocate a 3D photo buffer: (ncols, pver, phtcnt)
+    m_photo_3d = view_3d("tchem_photo_3d", m_ncols, mam4::mo_photo::pver, mam4::mo_photo::phtcnt);
+    // allocate O3 column buffer
+    m_o3col = view_2d("tchem_o3col", m_ncols, mam4::mo_photo::pver);
+    // find O3 species index in kinetic model names (if present)
+    m_o3_species_index = -1;
+    auto species_names_host = m_kmd.sNames_.view_host();
+    for (int i = 0; i < m_kmd.nSpec_; ++i) {
+      const std::string sname(&species_names_host(i, 0));
+      if (sname == "O3") { m_o3_species_index = i; break; }
+    }
+    m_have_photo_table = true;
+  } else {
+    m_have_photo_table = false;
+  }
   // std::cout << "[TChemATM] Done initialize_impl\n";
 }
 
@@ -538,6 +668,74 @@ void TChemATM::run_impl(const double dt) {
   }
 
   Kokkos::deep_copy(m_photo_rates, 0.0);
+  // Compute photo table rates if we have a photo table
+  if (m_have_photo_table) {
+    // zero the 3D photo buffer
+    Kokkos::deep_copy(m_photo_3d, 0.0);
+    // Prepare inputs
+    const auto& sfc_alb = get_field_in("sfc_alb_dir_vis").get_view<const Real **>();
+    const auto& cos_sza = get_field_in("cosine_solar_zenith_angle").get_view<const Real **>();
+    const auto& qc_field = get_field_in("qc").get_view<const Real **>();
+    const auto& cldfrac = get_field_in("cldfrac_tot").get_view<const Real **>();
+    // ozone column buffer (preallocated in initialize_impl)
+    Kokkos::deep_copy(m_o3col, 0.0);
+
+    Kokkos::parallel_for(
+        "tchem_photo_table", col_policy,
+        KOKKOS_LAMBDA(const ThreadTeam &team) {
+          const int icol = team.league_rank();
+          // per-column work array (1D view)
+          const auto work_photo_table_icol = ekat::subview(m_work_photo_table, icol);
+          mam4::mo_photo::PhotoTableWorkArrays photo_work_arrays_icol;
+          mam4::mo_photo::set_photo_table_work_arrays(m_photo_table, work_photo_table_icol,
+                                                     photo_work_arrays_icol);
+          team.team_barrier();
+          // subviews for column inputs
+          const auto pmid_col = ekat::subview(p_mid, icol);
+          const auto pdel_col = ekat::subview(p_del_dry, icol);
+          const auto t_col = ekat::subview(t_mid, icol);
+          const auto o3_col = ekat::subview(m_o3col, icol);
+          // compute o3 column densities if we have an O3 tracer
+          if (m_o3_species_index >= 0) {
+            // get O3 tracer field (wet mmr) – field name matches kinetic model name
+            auto species_names_host = m_kmd.sNames_.view_host();
+            const std::string o3_name(&species_names_host(m_o3_species_index, 0));
+            const auto& o3_field = get_field_out(o3_name).get_view<Real **>();
+            const auto mmr_o3_col = ekat::subview(o3_field, icol);
+            // compute column densities (molecules/cm^2) from mmr and pdel
+            mam4::microphysics::compute_o3_column_density(team, pdel_col, mmr_o3_col,
+                                                          0.0, m_species_mw[m_o3_species_index],
+                                                          o3_col);
+          }
+          // compute zenith angle (radians) from cosine
+          const Real cosz = cos_sza(icol, 0);
+          const Real zenith = acos(cosz);
+          const Real srfalb = sfc_alb(icol, 0);
+          const auto qc_col = ekat::subview(qc_field, icol);
+          const auto cld_col = ekat::subview(cldfrac, icol);
+          const auto photo_icol = ekat::subview(m_photo_3d, icol);
+          const Real esfact = 1.0;
+          mam4::mo_photo::table_photo(team, photo_icol, pmid_col, pdel_col, t_col,
+                                     o3_col, zenith, srfalb, qc_col, cld_col,
+                                     esfact, m_photo_table, photo_work_arrays_icol);
+        });
+
+    // copy into m_photo_rates (flattened nbatch x nphoto_reactions)
+    const int phtcnt = mam4::mo_photo::phtcnt;
+    Kokkos::parallel_for(
+        "tchem_photo_copy", Kokkos::RangePolicy<TChem::exec_space>(0, m_ncols),
+        KOKKOS_LAMBDA(const int icol) {
+          for (int kk = 0; kk < m_nlevs; ++kk) {
+            const int ibatch = icol * m_nlevs + kk;
+            for (int mm = 0; mm < phtcnt && mm < m_photo_rates.extent(1); ++mm) {
+              m_photo_rates(ibatch, mm) = m_photo_3d(icol, kk, mm);
+            }
+          }
+        });
+    Kokkos::fence();
+  }
+
+
   Kokkos::deep_copy(m_external_sources, 0.0);
   Kokkos::deep_copy(m_t, 0.0);
   Kokkos::deep_copy(m_dt_view, dt);
