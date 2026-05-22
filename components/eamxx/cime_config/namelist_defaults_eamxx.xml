@@ -514,6 +514,9 @@ be lost if SCREAM_HACK_XML is not enabled.
     <!-- TChem-ATM atmospheric chemistry -->
     <tchem_atm inherit="atm_proc_base">
       <chem_file type="file" doc="TChem chemistry mechanism file">none</chem_file>
+      <!--Photolysis-->
+      <mam4_rsf_file type="file" doc="File containing photolysis data"> ${DIN_LOC_ROOT}/atm/scream/mam4xx/photolysis/RSF_GT200nm_v3.0_c080811.nc</mam4_rsf_file>
+      <mam4_xs_long_file type="file" doc="File containing photolysis data"> ${DIN_LOC_ROOT}/atm/scream/mam4xx/photolysis/temp_prs_GT200nm_JPL10_c130206.nc</mam4_xs_long_file>
       <molecular_weights>
         <O3       type="real" doc="Molecular weight of O3 (g/mol)">47.998200</O3>
         <OH       type="real" doc="Molecular weight of OH (g/mol)">17.006800</OH>

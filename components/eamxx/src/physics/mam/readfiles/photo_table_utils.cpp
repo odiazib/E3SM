@@ -38,10 +38,16 @@ std::vector<Real> populate_etfphot_from_e3sm_case() {
 
 // This version uses eamxx_scorpio_interface to read netcdf files.
 mam4::mo_photo::PhotoTableData read_photo_table(
-    const std::string &rsf_file, const std::string &xs_long_file) {
-  // set up the lng_indexer and pht_alias_mult_1 views based on our
-  // (hardwired) chemical mechanism
-  HostViewInt1D lng_indexer_h("lng_indexer", phtcnt);
+    const std::string &rsf_file, const std::string &xs_long_file,
+    const std::vector<std::string> &rxt_names, const int numj,
+    const HostViewInt1D &lng_indexer_h) {
+
+  EKAT_REQUIRE_MSG(numj > 0, "Error: read_photo_table requires numj > 0.\n");
+  // EKAT_REQUIRE_MSG(static_cast<int>(rxt_names.size()) == numj,
+                  //  "Error: read_photo_table requires rxt_names.size() == numj.\n");
+  EKAT_REQUIRE_MSG(lng_indexer_h.extent_int(0) == phtcnt,
+                   "Error: read_photo_table requires lng_indexer_h sized by phtcnt.\n");
+
 
   int nw, nump, numsza, numcolo3, numalb, nt, np_xs;  // table dimensions
   scorpio::register_file(rsf_file, scorpio::Read);
@@ -56,10 +62,6 @@ mam4::mo_photo::PhotoTableData read_photo_table(
   nw    = scorpio::get_dimlen(xs_long_file, "numwl");
   np_xs = scorpio::get_dimlen(xs_long_file, "numprs");
 
-  // FIXME: hard-coded for only one photo reaction.
-  std::string rxt_names[1] = {"jh2o2"};
-  int numj                 = 1;
-  lng_indexer_h(0)         = 0;
   // allocate the photolysis table
   auto table = mam4::mo_photo::create_photo_table_data(
       nw, nt, np_xs, numj, nump, numsza, numcolo3, numalb);
@@ -86,11 +88,12 @@ mam4::mo_photo::PhotoTableData read_photo_table(
   scorpio::read_var(xs_long_file, "pressure", prs_h.data());
 
   // read xsqy data (using lng_indexer_h for the first index)
-  // FIXME: hard-coded for only one photo reaction.
-  for(int m = 0; m < phtcnt; ++m) {
+  for(int m = 0; m < numj; ++m) {
     auto xsqy_ndx_h = ekat::subview(xsqy_h, m);
-    scorpio::read_var(xs_long_file, rxt_names[m], xsqy_h.data());
+    std::cout << "Reading photolysis reaction " << rxt_names[m] << " from file " << xs_long_file << "\n";
+    scorpio::read_var(xs_long_file, rxt_names[m], xsqy_ndx_h.data());
   }
+  
 
   // populate etfphot by rebinning solar data
   HostView1D wc_h("wc", nw), wlintv_h("wlintv", nw), we_h("we", nw + 1);
@@ -146,6 +149,17 @@ mam4::mo_photo::PhotoTableData read_photo_table(
       });
 
   return table;
+}
+
+// MAM4xx E3SM v2 photolysis table reader.
+mam4::mo_photo::PhotoTableData read_photo_table(
+    const std::string &rsf_file, const std::string &xs_long_file) {
+  
+  HostViewInt1D lng_indexer_h("lng_indexer", phtcnt);
+  std::vector<std::string> rxt_names = {"jh2o2"};
+  int numj                 = 1;
+  lng_indexer_h(0)         = 0;
+  return read_photo_table(rsf_file, xs_long_file, rxt_names, numj, lng_indexer_h);
 }
 
 }  // namespace scream::impl
