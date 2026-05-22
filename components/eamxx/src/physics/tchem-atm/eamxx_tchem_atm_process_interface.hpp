@@ -6,6 +6,7 @@
 #include <TChem.hpp>
 #include <string>
 #include <vector>
+#include <mam4xx/mo_photo.hpp>
 
 namespace scream {
 
@@ -19,6 +20,7 @@ class TChemATM : public AtmosphereProcess {
   using KT          = ekat::KokkosTypes<DefaultDevice>;
   using view_1d     = typename KT::template view_1d<Real>;
   using view_2d     = typename KT::template view_2d<Real>;
+  using view_3d     = typename KT::template view_3d<Real>;
   using view_1d_int = typename KT::template view_1d<int>;
   using ThreadTeam  = Kokkos::TeamPolicy<KT::ExeSpace>::member_type;
   TChemATM(const ekat::Comm& comm, const ekat::ParameterList& params);
@@ -79,6 +81,15 @@ class TChemATM : public AtmosphereProcess {
   view_2d      m_z_mid;
   view_2d      m_qv_dry;
   view_1d_int  m_ilev_tropp;
+  // Photo table data (optional)
+  mam4::mo_photo::PhotoTableData m_photo_table;
+  view_2d      m_work_photo_table;
+  view_3d      m_photo_3d;
+  int          m_photo_table_len = 0;
+  bool         m_have_photo_table = false;
+  // O3 column densities per column (molecules/cm^2) for photo table
+  view_2d      m_o3col;
+  int          m_o3_species_index = -1;
   // Persistent sample/index views (allocate once in initialize, reuse in run)
   view_1d_int  m_offsets;
   view_1d_int  m_sample_icol;
