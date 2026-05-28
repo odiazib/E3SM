@@ -21,6 +21,7 @@ class TChemATM : public AtmosphereProcess {
   using view_1d     = typename KT::template view_1d<Real>;
   using view_2d     = typename KT::template view_2d<Real>;
   using view_3d     = typename KT::template view_3d<Real>;
+  using const_view_1d = typename KT::template view_1d<const Real>;
   using view_1d_int = typename KT::template view_1d<int>;
   using ThreadTeam  = Kokkos::TeamPolicy<KT::ExeSpace>::member_type;
   TChemATM(const ekat::Comm& comm, const ekat::ParameterList& params);
@@ -89,6 +90,10 @@ class TChemATM : public AtmosphereProcess {
   bool         m_have_photo_table = false;
   // O3 column densities per column (molecules/cm^2) for photo table
   view_2d      m_o3col;
+  // Solar zenith angle (radians) per column for photo table.
+  view_1d      m_zenith_angle;
+  // Surface albedo (shortwave, direct), cached like MAM interface.
+  const_view_1d m_sfc_alb_dir_vis;
   int          m_o3_species_index = -1;
   // Persistent sample/index views (allocate once in initialize, reuse in run)
   view_1d_int  m_offsets;

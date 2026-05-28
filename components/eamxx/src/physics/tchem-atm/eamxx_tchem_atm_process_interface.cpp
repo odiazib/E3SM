@@ -4,22 +4,27 @@
 #include <ekat_team_policy_utils.hpp>
 #include <mam4xx/mam4.hpp>
 #include <mam4xx/mo_photo.hpp>
+
+#include "physics/rrtmgp/shr_orb_mod_c2f.hpp"
+#include "share/physics/eamxx_common_physics_functions.hpp"
+
 namespace scream {
 namespace impl {
+
+  //QUESTION: why I need these two function declarations?
 using HostViewInt1D = mam4::DeviceType::view_1d<int>::host_mirror_type;
 mam4::mo_photo::PhotoTableData read_photo_table(const std::string &rsf_file,
                         const std::string &xs_long_file);
+
 mam4::mo_photo::PhotoTableData read_photo_table(
   const std::string &rsf_file, const std::string &xs_long_file,
   const std::vector<std::string> &rxt_names, int numj,
   const HostViewInt1D &lng_indexer_h);
-} // namespace impl
-} // namespace scream
-#include "share/physics/eamxx_common_physics_functions.hpp"
+}
 
-namespace scream {
+namespace tchem {
 
-namespace {
+
 
 void modify_photo_table_pht_alias_mult_1(mam4::mo_photo::PhotoTableData &table_data) {
   constexpr int phtcnt = mam4::mo_photo::phtcnt;
@@ -35,7 +40,7 @@ void modify_photo_table_pht_alias_mult_1(mam4::mo_photo::PhotoTableData &table_d
   Kokkos::deep_copy(table_data.pht_alias_mult_1, pht_alias_mult_host);
 }
 
-  // MAM4xx E3SM uci photolysis table reader.
+// MAM4xx E3SM uci photolysis table reader.
 mam4::mo_photo::PhotoTableData read_photo_table_uci(
     const std::string &rsf_file, const std::string &xs_long_file) {
   
@@ -88,7 +93,7 @@ mam4::mo_photo::PhotoTableData read_photo_table_uci(
   int numj = 0;
   std::vector<std::string>  rxt_names_read{};
   for (int m = 0; m < phtcnt; ++m) {
-    if (lng_indexer_h(m) > 0) {
+    if (lng_indexer_h(m) >= 0) {
         bool already_seen = false;
         for (int k = 0; k < m; ++k) {
             if (lng_indexer_h(k) == lng_indexer_h(m)) {
@@ -164,7 +169,7 @@ void compute_sample_indices(
             const int lev_start = above ? ntropopause(icol) : 0;
             const int lev_end   = above ? nlev                     : ntropopause(icol);
             const int offset    = offsets(icol);
-            printf("compute_sample_indices: icol = %d, lev_start = %d, lev_end = %d, offset = %d, ntropopause = %d\n", icol, lev_start, lev_end, offset, ntropopause(icol));
+            // printf("compute_sample_indices: icol = %d, lev_start = %d, lev_end = %d, offset = %d, ntropopause = %d\n", icol, lev_start, lev_end, offset, ntropopause(icol));
             for (int ilev = lev_start; ilev < lev_end; ++ilev) {
                 const int isample    = offset + (ilev - lev_start);
                 sample_icol(isample) = icol;
@@ -379,9 +384,8 @@ void TChemATM::create_requests() {
   add_field<Required>("qv", scalar3d_mid, q_unit, grid_name);
   add_field<Required>("p_int", scalar3d_int, Pa, grid_name);
   add_field<Required>("pseudo_density_dry", scalar3d_mid, Pa, grid_name);
-  // Photo-table inputs (surface albedo, solar zenith, cloud and liquid)
+  // Photo-table inputs (surface albedo, cloud and liquid)
   add_field<Required>("sfc_alb_dir_vis", scalar2d, none, grid_name);
-  add_field<Required>("cosine_solar_zenith_angle", scalar2d, none, grid_name);
   add_field<Required>("qc", scalar3d_mid, q_unit, grid_name);
   add_field<Required>("cldfrac_tot", scalar3d_mid, none, grid_name);
 
@@ -449,11 +453,14 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     return;
   }
 
+  // Match MAM behavior: cache direct visible surface albedo view once.
+  m_sfc_alb_dir_vis = get_field_in("sfc_alb_dir_vis").get_view<const Real *>();
+
   m_n_active_vars = m_kmcd.nSpec - m_kmcd.nConstSpec;
   m_state_vec_dim = TChem::Impl::getStateVectorSize(m_kmcd.nSpec);
 
   m_state = explicit_euler_type::real_type_2d_view_type("tchem_state", m_nbatch, m_state_vec_dim);
-  const int m_photo_reactions= 22;
+  const int m_photo_reactions = mam4::mo_photo::phtcnt;
   m_photo_rates = explicit_euler_type::real_type_2d_view_type("tchem_photo_rates", m_nbatch, m_photo_reactions);
   m_external_sources = explicit_euler_type::real_type_2d_view_type("tchem_external_sources", m_nbatch, m_n_active_vars);
   m_t = explicit_euler_type::real_type_1d_view_type("tchem_time", m_nbatch);
@@ -465,6 +472,7 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   m_z_iface    = view_2d("tchem_z_iface",    m_ncols, m_nlevs + 1);
   m_z_mid      = view_2d("tchem_z_mid",      m_ncols, m_nlevs);
   m_qv_dry     = view_2d("tchem_qv_dry",     m_ncols, m_nlevs);
+  m_zenith_angle = view_1d("tchem_zenith_angle", m_ncols);
   m_ilev_tropp = view_1d_int("tchem_ilev_tropp", m_ncols);
   // Allocate persistent index/offset views once here and reuse in run_impl.
   m_offsets = view_1d_int("tchem_offsets", m_ncols + 1);
@@ -526,7 +534,7 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   const std::string rsf_file = m_params.get<std::string>("mam4_rsf_file", "");
   const std::string xs_long_file = m_params.get<std::string>("mam4_xs_long_file", "");
   if (!rsf_file.empty() && !xs_long_file.empty()) {
-    m_photo_table = read_photo_table_uci(rsf_file, xs_long_file);
+    m_photo_table = tchem::read_photo_table_uci(rsf_file, xs_long_file);
     m_photo_table_len = mam4::mo_photo::get_photo_table_work_len(m_photo_table);
     m_work_photo_table = view_2d("tchem_photo_work", m_ncols, m_photo_table_len);
     // allocate a 3D photo buffer: (ncols, pver, phtcnt)
@@ -645,7 +653,7 @@ void TChemATM::run_impl(const double dt) {
   // Choose sampling option: sample above or below tropopause according to
   // the 'm_run_troposhere' parameter (true = above, false = below).
   const bool above = m_run_troposhere;
-  m_nsamples = compute_nsamples(ntropopause, ncol, nlev, above);
+  m_nsamples = tchem::compute_nsamples(ntropopause, ncol, nlev, above);
   if (m_atm_logger) m_atm_logger->info("[TChemATM] m_nsamples = " + std::to_string(m_nsamples));
 
   using policy_type = typename TChem::UseThisTeamPolicy<TChem::exec_space>::type;
@@ -670,16 +678,57 @@ void TChemATM::run_impl(const double dt) {
   Kokkos::deep_copy(m_photo_rates, 0.0);
   // Compute photo table rates if we have a photo table
   if (m_have_photo_table) {
+    // Compute orbital eccentricity factor used by MAM photo_table.
+    int orbital_year = m_params.get<int>("orbital_year", -9999);
+    double eccen = m_params.get<double>("orbital_eccentricity", -9999.0);
+    double obliq = m_params.get<double>("orbital_obliquity", -9999.0);
+    double mvelp = m_params.get<double>("orbital_mvelp", -9999.0);
+    double obliqr, lambm0, mvelpp;
+    if (eccen >= 0 && obliq >= 0 && mvelp >= 0) {
+      orbital_year = shr_orb_undef_int_c2f;
+    } else if (orbital_year < 0) {
+      orbital_year = start_of_step_ts().get_year();
+    }
+    shr_orb_params_c2f(&orbital_year, &eccen, &obliq, &mvelp,
+                       &obliqr, &lambm0, &mvelpp);
+    const auto calday = start_of_step_ts().frac_of_year_in_days() + 1;
+    double delta = 0, eccf = 1.0;
+    shr_orb_decl_c2f(calday, eccen, mvelpp, lambm0, obliqr, &delta, &eccf);
+
+    // Match MAM behavior: compute zenith angle on host, then copy to device.
+    auto zenith_host = Kokkos::create_mirror_view(m_zenith_angle);
+    const auto col_latitudes_host =
+      m_grid->get_geometry_data("lat").get_view<const Real *, Host>();
+    const auto col_longitudes_host =
+      m_grid->get_geometry_data("lon").get_view<const Real *, Host>();
+    for (int i = 0; i < m_ncols; ++i) {
+      const Real lat = col_latitudes_host(i) * M_PI / 180.0;
+      const Real lon = col_longitudes_host(i) * M_PI / 180.0;
+      const Real cosz = shr_orb_cosz_c2f(calday, lat, lon, delta, dt);
+      zenith_host(i) = acos(cosz);
+    }
+    Kokkos::deep_copy(m_zenith_angle, zenith_host);
+
     // zero the 3D photo buffer
     Kokkos::deep_copy(m_photo_3d, 0.0);
     // Prepare inputs
-    const auto& sfc_alb = get_field_in("sfc_alb_dir_vis").get_view<const Real **>();
-    const auto& cos_sza = get_field_in("cosine_solar_zenith_angle").get_view<const Real **>();
+    const auto& sfc_alb = m_sfc_alb_dir_vis;
+    const auto& zenith_angle = m_zenith_angle;
     const auto& qc_field = get_field_in("qc").get_view<const Real **>();
     const auto& cldfrac = get_field_in("cldfrac_tot").get_view<const Real **>();
+
+    view_2d o3_field;
+    bool have_o3_field = false;
+    if (m_o3_species_index >= 0) {
+      const auto species_names_host = m_kmd.sNames_.view_host();
+      const std::string o3_name(&species_names_host(m_o3_species_index, 0));
+      o3_field = get_field_out(o3_name).get_view<Real **>();
+      have_o3_field = true;
+    }
+
     // ozone column buffer (preallocated in initialize_impl)
     Kokkos::deep_copy(m_o3col, 0.0);
-
+#if 1
     Kokkos::parallel_for(
         "tchem_photo_table", col_policy,
         KOKKOS_LAMBDA(const ThreadTeam &team) {
@@ -696,27 +745,20 @@ void TChemATM::run_impl(const double dt) {
           const auto t_col = ekat::subview(t_mid, icol);
           const auto o3_col = ekat::subview(m_o3col, icol);
           // compute o3 column densities if we have an O3 tracer
-          if (m_o3_species_index >= 0) {
-            // get O3 tracer field (wet mmr) – field name matches kinetic model name
-            auto species_names_host = m_kmd.sNames_.view_host();
-            const std::string o3_name(&species_names_host(m_o3_species_index, 0));
-            const auto& o3_field = get_field_out(o3_name).get_view<Real **>();
+          if (have_o3_field) {
             const auto mmr_o3_col = ekat::subview(o3_field, icol);
             // compute column densities (molecules/cm^2) from mmr and pdel
             mam4::microphysics::compute_o3_column_density(team, pdel_col, mmr_o3_col,
                                                           0.0, m_species_mw[m_o3_species_index],
                                                           o3_col);
           }
-          // compute zenith angle (radians) from cosine
-          const Real cosz = cos_sza(icol, 0);
-          const Real zenith = acos(cosz);
-          const Real srfalb = sfc_alb(icol, 0);
+          const Real srfalb = sfc_alb(icol);
           const auto qc_col = ekat::subview(qc_field, icol);
           const auto cld_col = ekat::subview(cldfrac, icol);
           const auto photo_icol = ekat::subview(m_photo_3d, icol);
-          const Real esfact = 1.0;
+          const Real esfact = eccf;
           mam4::mo_photo::table_photo(team, photo_icol, pmid_col, pdel_col, t_col,
-                                     o3_col, zenith, srfalb, qc_col, cld_col,
+                                     o3_col, zenith_angle(icol), srfalb, qc_col, cld_col,
                                      esfact, m_photo_table, photo_work_arrays_icol);
         });
 
@@ -733,6 +775,7 @@ void TChemATM::run_impl(const double dt) {
           }
         });
     Kokkos::fence();
+#endif    
   }
 
 
@@ -756,9 +799,9 @@ void TChemATM::run_impl(const double dt) {
   // std::cout << "[TChemATM] Starting TChem run\n";
 
   // compute offsets into the pre-allocated offsets view
-  compute_offsets(ntropopause, ncol, nlev, m_offsets, above);
+  tchem::compute_offsets(ntropopause, ncol, nlev, m_offsets, above);
   // fill sample index arrays into the pre-allocated views
-  compute_sample_indices(ntropopause, m_offsets, ncol, nlev, m_sample_icol,
+  tchem::compute_sample_indices(ntropopause, m_offsets, ncol, nlev, m_sample_icol,
                          m_sample_ilev, above);
                          
   // print m_offsets for debugging
@@ -793,9 +836,9 @@ void TChemATM::run_impl(const double dt) {
   Kokkos::fence();
 
   // Pack pressure and temperature into the state for all selected samples
-  pack_into_state(state, p_mid, m_sample_icol, m_sample_ilev, m_nsamples, 1,
+  tchem::pack_into_state(state, p_mid, m_sample_icol, m_sample_ilev, m_nsamples, 1,
                   "tchem_init_state_p");
-  pack_into_state(state, t_mid, m_sample_icol, m_sample_ilev, m_nsamples, 2,
+  tchem::pack_into_state(state, t_mid, m_sample_icol, m_sample_ilev, m_nsamples, 2,
                   "tchem_init_state_t");
 
   // std::cout << "[TChemATM] Done fill_state_column_from_field\n";
@@ -805,7 +848,7 @@ void TChemATM::run_impl(const double dt) {
     // std::cout << "[TChemATM] Filling state column for tracer " << tracer_name << "\n";
     const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
     // Use sampling-aware pack to only pack selected samples (m_sample_icol/ilev)
-    pack_wet_mmr_into_state(state, q_tracer, qv, m_sample_icol, m_sample_ilev,
+    tchem::pack_wet_mmr_into_state(state, q_tracer, qv, m_sample_icol, m_sample_ilev,
                 m_nsamples, ivar + 3, m_species_mw[ivar],
                 "tchem_init_state_tracer");
     // if (ivar == 0) {
@@ -920,7 +963,7 @@ void TChemATM::run_impl(const double dt) {
     const auto& tracer_name = std::string(&species_names_host(ivar, 0));
     const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
     // Unpack only sampled entries from TChem state back into wet-mmr tracer field
-    unpack_wet_mmr_from_state(q_tracer, state, qv, m_sample_icol, m_sample_ilev,
+    tchem::unpack_wet_mmr_from_state(q_tracer, state, qv, m_sample_icol, m_sample_ilev,
                   m_nsamples, ivar + 3, m_species_mw[ivar],
                   "tchem_copy_back_state_tracer");
   } 

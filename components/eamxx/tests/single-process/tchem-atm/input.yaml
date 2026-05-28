@@ -12,6 +12,8 @@ eamxx:
   atm_procs_list: [tchem_atm]
   tchem_atm:
     chem_file: ${TCHEM_ATM_CHEM_FILE}
+    mam4_rsf_file : ${SCREAM_DATA_DIR}/mam4xx/photolysis/RSF_GT200nm_v3.0_c080811.nc
+    mam4_xs_long_file : ${SCREAM_DATA_DIR}/mam4xx/photolysis/temp_prs_GT200nm_JPL10_c130206.nc
     molecular_weights:
       O3: 47.998200
       OH: 17.006800
