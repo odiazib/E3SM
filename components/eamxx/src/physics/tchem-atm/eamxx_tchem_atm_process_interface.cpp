@@ -6,8 +6,12 @@
 #include <mam4xx/mam4.hpp>
 #include <mam4xx/mo_photo.hpp>
 
+#include "physics/mam/readfiles/vertical_remapper_exo_coldens.hpp"
 #include "physics/rrtmgp/shr_orb_mod_c2f.hpp"
+#include "share/algorithm/eamxx_data_interpolation.hpp"
 #include "share/physics/eamxx_common_physics_functions.hpp"
+
+#include <algorithm>
 
 namespace scream {
 
@@ -207,6 +211,8 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   } else {
     m_have_photo_table = false;
   }
+
+  set_exo_coldens_reader();
   // std::cout << "[TChemATM] Done initialize_impl\n";
 }
 
@@ -215,6 +221,57 @@ int TChemATM::get_len_temporary_views() {
 }
 
 void TChemATM::init_temporary_views() {}
+
+void TChemATM::set_exo_coldens_reader() {
+  using namespace ekat::units;
+  using namespace ShortFieldTagsNames;
+
+  const std::string exo_coldens_file_name =
+      m_params.get<std::string>("mam4_exo_coldens_file_name", "");
+  if (exo_coldens_file_name.empty()) {
+    m_have_exo_coldens = false;
+    return;
+  }
+
+  const std::string exo_coldens_map_file =
+      m_params.get<std::string>("aero_microphys_remap_file", "");
+  const auto pint = get_field_in("p_int");
+
+  auto grid_exo_coldens = m_grid->clone("exo_grid", true);
+  grid_exo_coldens->reset_vertical_configuration(1, AbstractGrid::VKind::Model);
+  auto layout = grid_exo_coldens->get_3d_scalar_layout(LEV);
+
+  auto cm2 = pow(m / 100, 2);
+  auto molec_cm2 = Units(none / cm2, "molecules/cm2");
+  Field field_exo(FieldIdentifier("O3_column_density", layout, molec_cm2,
+                                  grid_exo_coldens->name()));
+  field_exo.allocate_view();
+
+  m_exo_coldens_fields.clear();
+  m_exo_coldens_fields.push_back(field_exo);
+
+  util::TimeStamp ref_ts_exo_coldens(1, 1, 1, 0, 0, 0);
+  m_data_interp_exo_coldens =
+      std::make_shared<DataInterpolation>(grid_exo_coldens, m_exo_coldens_fields);
+  m_data_interp_exo_coldens->setup_time_database(
+      {exo_coldens_file_name}, util::TimeLine::YearlyPeriodic,
+      DataInterpolation::Linear, ref_ts_exo_coldens);
+  m_data_interp_exo_coldens->create_horiz_remappers(
+      exo_coldens_map_file == "none" ? "" : exo_coldens_map_file);
+  m_data_interp_exo_coldens->set_logger(m_atm_logger);
+
+  DataInterpolation::VertRemapData remap_exo_coldens;
+  remap_exo_coldens.vr_type = DataInterpolation::Custom;
+  auto grid_after_hremap = m_data_interp_exo_coldens->get_grid_after_hremap();
+  auto vertical_remapper = std::make_shared<VerticalRemapperExoColdensMAM4>(
+      grid_after_hremap, grid_exo_coldens);
+  vertical_remapper->set_delta_pressure(exo_coldens_file_name, pint);
+  remap_exo_coldens.custom_remapper = vertical_remapper;
+
+  m_data_interp_exo_coldens->create_vert_remapper(remap_exo_coldens);
+  m_data_interp_exo_coldens->init_data_interval(start_of_step_ts());
+  m_have_exo_coldens = true;
+}
 
 void TChemATM::run_impl(const double dt) {
   
@@ -227,6 +284,10 @@ void TChemATM::run_impl(const double dt) {
 
   if (m_nbatch == 0) {
     return;
+  }
+
+  if (m_have_exo_coldens && m_data_interp_exo_coldens) {
+    m_data_interp_exo_coldens->run(end_of_step_ts());
   }
 
   const auto& t_mid = get_field_in("T_mid").get_view<const Real **>();
@@ -330,6 +391,11 @@ void TChemATM::run_impl(const double dt) {
     policy.set_scratch_size(1, Kokkos::PerTeam(per_team_scratch));
   }
 
+  // Compute offsets and sampled indices used by state/photo packing.
+  tchem::compute_offsets(ntropopause, ncol, nlev, m_offsets, above);
+  tchem::compute_sample_indices(ntropopause, m_offsets, ncol, nlev, m_sample_icol,
+                                m_sample_ilev, above);
+
   Kokkos::deep_copy(m_photo_rates, 0.0);
   // Compute photo table rates if we have a photo table
   if (m_have_photo_table) {
@@ -384,6 +450,12 @@ void TChemATM::run_impl(const double dt) {
     // ozone column buffer (preallocated in initialize_impl)
     Kokkos::deep_copy(m_o3col, 0.0);
 #if 1
+    view_2d o3_exo_col;
+    const bool have_o3_exo_col = m_have_exo_coldens && !m_exo_coldens_fields.empty();
+    if (have_o3_exo_col) {
+      o3_exo_col = m_exo_coldens_fields[0].get_view<Real **>();
+    }
+
     Kokkos::parallel_for(
         "tchem_photo_table", col_policy,
         KOKKOS_LAMBDA(const ThreadTeam &team) {
@@ -398,13 +470,16 @@ void TChemATM::run_impl(const double dt) {
           const auto pmid_col = ekat::subview(p_mid, icol);
           const auto pdel_col = ekat::subview(p_del_dry, icol);
           const auto t_col = ekat::subview(t_mid, icol);
+          //CHECK: compare against microphysic interface and check how
+          // o3_col is computed there and here.  
           const auto o3_col = ekat::subview(m_o3col, icol);
           // compute o3 column densities if we have an O3 tracer
           if (have_o3_field) {
             const auto mmr_o3_col = ekat::subview(o3_field, icol);
+            const Real o3_exo_top = have_o3_exo_col ? o3_exo_col(icol, 0) : 0.0;
             // compute column densities (molecules/cm^2) from mmr and pdel
             mam4::microphysics::compute_o3_column_density(team, pdel_col, mmr_o3_col,
-                                                          0.0, m_species_mw[m_o3_species_index],
+                                                          o3_exo_top, m_species_mw[m_o3_species_index],
                                                           o3_col);
           }
           const Real srfalb = sfc_alb(icol);
@@ -417,18 +492,13 @@ void TChemATM::run_impl(const double dt) {
                                      esfact, m_photo_table, photo_work_arrays_icol);
         });
 
-    // copy into m_photo_rates (flattened nbatch x nphoto_reactions)
-    const int phtcnt = mam4::mo_photo::phtcnt;
-    Kokkos::parallel_for(
-        "tchem_photo_copy", Kokkos::RangePolicy<TChem::exec_space>(0, m_ncols),
-        KOKKOS_LAMBDA(const int icol) {
-          for (int kk = 0; kk < m_nlevs; ++kk) {
-            const int ibatch = icol * m_nlevs + kk;
-            for (int mm = 0; mm < phtcnt && mm < m_photo_rates.extent(1); ++mm) {
-              m_photo_rates(ibatch, mm) = m_photo_3d(icol, kk, mm);
-            }
-          }
-        });
+    // Copy sampled levels into m_photo_rates (nsamples x nphoto_reactions).
+    const int nphoto_reactions =
+        std::min(static_cast<int>(m_photo_rates.extent(1)),
+                 mam4::mo_photo::phtcnt);
+    tchem::pack_photo_rates_into_state(
+        m_photo_rates, m_photo_3d, m_sample_icol, m_sample_ilev, m_nsamples,
+        nphoto_reactions, "tchem_photo_copy");
     Kokkos::fence();
 #endif    
   }
@@ -452,43 +522,6 @@ void TChemATM::run_impl(const double dt) {
   Kokkos::deep_copy(m_tadv, tadv_default);
 
   // std::cout << "[TChemATM] Starting TChem run\n";
-
-  // compute offsets into the pre-allocated offsets view
-  tchem::compute_offsets(ntropopause, ncol, nlev, m_offsets, above);
-  // fill sample index arrays into the pre-allocated views
-  tchem::compute_sample_indices(ntropopause, m_offsets, ncol, nlev, m_sample_icol,
-                         m_sample_ilev, above);
-                         
-  // print m_offsets for debugging
-  auto offsets_host = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), m_offsets);
-  auto ntropopause_host = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), ntropopause);
-  // std::cout << "[TChemATM] Offsets: ";
-  // for (int i = 0; i <= ncol; ++i)
-    // std::cout << "offsets_host (" << i << ") = " << offsets_host(i) << ", ntropopause_host (" << i << ") = " << ntropopause_host(i) << "\n  ";
-  // std::cout << "\n";  
-
-  // auto sample_icol_host =
-      // Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), m_sample_icol);
-  // auto sample_ilev_host =
-      // Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), m_sample_ilev);
-  // std::cout << "[TChemATM] Sample indices (isample, icol, ilev):\n";
-  // for (int isample = 0; isample < m_nsamples; ++isample) {
-    // std::cout << "  (" << isample << ", " << sample_icol_host(isample)
-              // << ", " << sample_ilev_host(isample) << ")\n";
-  // }
-
-  // std::cout << "  (" << 483 << ", " << sample_icol_host(483)
-  //             << ", " << sample_ilev_host(483) << ")\n";
-  // for (int isample = 0; isample < m_nsamples; ++isample) {
-  //   if (sample_ilev_host(isample) < ntropopause_host(sample_icol_host(isample))) {
-  //     std::cout << "  stratosphere sample: (" << isample << ", " << sample_icol_host(isample)
-  //               << ", " << sample_ilev_host(isample) << ")\n";
-  //   }
-  // }  
-
-
-
-  Kokkos::fence();
 
   // Pack pressure and temperature into the state for all selected samples
   tchem::pack_into_state(state, p_mid, m_sample_icol, m_sample_ilev, m_nsamples, 1,

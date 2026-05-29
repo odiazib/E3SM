@@ -10,6 +10,8 @@
 
 namespace scream {
 
+class DataInterpolation;
+
 class TChemATM : public AtmosphereProcess {
  public:
   using tchem_device_type = typename Tines::UseThisDevice<TChem::exec_space>::type;
@@ -40,6 +42,7 @@ class TChemATM : public AtmosphereProcess {
  private:
   int get_len_temporary_views();
   void init_temporary_views();
+  void set_exo_coldens_reader();
 
   std::shared_ptr<const AbstractGrid> m_grid;
   TChem::KineticModelData m_kmd;
@@ -90,6 +93,10 @@ class TChemATM : public AtmosphereProcess {
   bool         m_have_photo_table = false;
   // O3 column densities per column (molecules/cm^2) for photo table
   view_2d      m_o3col;
+  // Exogenous O3 column density reader/interpolated field (top-of-atmosphere offset)
+  std::shared_ptr<DataInterpolation> m_data_interp_exo_coldens;
+  std::vector<Field> m_exo_coldens_fields;
+  bool m_have_exo_coldens = false;
   // Solar zenith angle (radians) per column for photo table.
   view_1d      m_zenith_angle;
   // Surface albedo (shortwave, direct), cached like MAM interface.
