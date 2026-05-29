@@ -137,6 +137,26 @@ void unpack_from_state(
       });
 }
 
+template <typename DestViewType, typename SourceViewType>
+void pack_photo_rates_into_state(
+    const DestViewType& dst,
+    const SourceViewType& src,
+    const Kokkos::View<const int*>& sample_icol,
+    const Kokkos::View<const int*>& sample_ilev,
+    int nsamples,
+    int nphoto,
+    const char* kernel_name) {
+  Kokkos::parallel_for(
+      kernel_name, Kokkos::RangePolicy<TChem::exec_space>(0, nsamples),
+      KOKKOS_LAMBDA(const int isample) {
+        const int icol = sample_icol(isample);
+        const int ilev = sample_ilev(isample);
+        for (int iphoto = 0; iphoto < nphoto; ++iphoto) {
+          dst(isample, iphoto) = src(icol, ilev, iphoto);
+        }
+      });
+}
+
 template <typename DestViewType, typename StateViewType, typename QvViewType>
 void unpack_wet_mmr_from_state(
     const DestViewType& dst,
