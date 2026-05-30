@@ -196,10 +196,10 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     m_photo_table = tchem::read_photo_table_uci(rsf_file, xs_long_file);
     m_photo_table_len = mam4::mo_photo::get_photo_table_work_len(m_photo_table);
     m_work_photo_table = view_2d("tchem_photo_work", m_ncols, m_photo_table_len);
-    // allocate a 3D photo buffer: (ncols, pver, phtcnt)
-    m_photo_3d = view_3d("tchem_photo_3d", m_ncols, mam4::mo_photo::pver, mam4::mo_photo::phtcnt);
+    // allocate a 3D photo buffer: (ncols, nlevs, phtcnt)
+    m_photo_3d = view_3d("tchem_photo_3d", m_ncols, m_nlevs, mam4::mo_photo::phtcnt);
     // allocate O3 column buffer
-    m_o3col = view_2d("tchem_o3col", m_ncols, mam4::mo_photo::pver);
+    m_o3col_dens = view_2d("tchem_o3col_dens", m_ncols, m_nlevs);
     // find O3 species index in kinetic model names (if present)
     m_o3_species_index = -1;
     auto species_names_host = m_kmd.sNames_.view_host();
@@ -448,22 +448,27 @@ void TChemATM::run_impl(const double dt) {
     }
 
     // ozone column buffer (preallocated in initialize_impl)
-    Kokkos::deep_copy(m_o3col, 0.0);
+    Kokkos::deep_copy(m_o3col_dens, 0.0);
 #if 1
     view_2d o3_exo_col;
     const bool have_o3_exo_col = m_have_exo_coldens && !m_exo_coldens_fields.empty();
     if (have_o3_exo_col) {
       o3_exo_col = m_exo_coldens_fields[0].get_view<Real **>();
     }
-
+    const auto work_photo_table = m_work_photo_table;
+    const auto photo_table = m_photo_table;
+    const auto o3_col_dens = m_o3col_dens ;
+    const auto photo_3d = m_photo_3d;
+    const Real o3_species_mw =
+        have_o3_field ? m_species_mw[m_o3_species_index] : 0.0;
     Kokkos::parallel_for(
         "tchem_photo_table", col_policy,
         KOKKOS_LAMBDA(const ThreadTeam &team) {
           const int icol = team.league_rank();
           // per-column work array (1D view)
-          const auto work_photo_table_icol = ekat::subview(m_work_photo_table, icol);
+          const auto work_photo_table_icol = ekat::subview(work_photo_table, icol);
           mam4::mo_photo::PhotoTableWorkArrays photo_work_arrays_icol;
-          mam4::mo_photo::set_photo_table_work_arrays(m_photo_table, work_photo_table_icol,
+          mam4::mo_photo::set_photo_table_work_arrays(photo_table, work_photo_table_icol,
                                                      photo_work_arrays_icol);
           team.team_barrier();
           // subviews for column inputs
@@ -472,24 +477,24 @@ void TChemATM::run_impl(const double dt) {
           const auto t_col = ekat::subview(t_mid, icol);
           //CHECK: compare against microphysic interface and check how
           // o3_col is computed there and here.  
-          const auto o3_col = ekat::subview(m_o3col, icol);
+          const auto o3_icol = ekat::subview(o3_col_dens, icol);
           // compute o3 column densities if we have an O3 tracer
           if (have_o3_field) {
             const auto mmr_o3_col = ekat::subview(o3_field, icol);
             const Real o3_exo_top = have_o3_exo_col ? o3_exo_col(icol, 0) : 0.0;
             // compute column densities (molecules/cm^2) from mmr and pdel
             mam4::microphysics::compute_o3_column_density(team, pdel_col, mmr_o3_col,
-                                                          o3_exo_top, m_species_mw[m_o3_species_index],
-                                                          o3_col);
+                                                          o3_exo_top, o3_species_mw,
+                                                          o3_icol);
           }
           const Real srfalb = sfc_alb(icol);
           const auto qc_col = ekat::subview(qc_field, icol);
           const auto cld_col = ekat::subview(cldfrac, icol);
-          const auto photo_icol = ekat::subview(m_photo_3d, icol);
+          const auto photo_icol = ekat::subview(photo_3d, icol);
           const Real esfact = eccf;
           mam4::mo_photo::table_photo(team, photo_icol, pmid_col, pdel_col, t_col,
-                                     o3_col, zenith_angle(icol), srfalb, qc_col, cld_col,
-                                     esfact, m_photo_table, photo_work_arrays_icol);
+                                     o3_icol, zenith_angle(icol), srfalb, qc_col, cld_col,
+                                     esfact, photo_table, photo_work_arrays_icol);
         });
 
     // Copy sampled levels into m_photo_rates (nsamples x nphoto_reactions).

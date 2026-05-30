@@ -92,7 +92,7 @@ class TChemATM : public AtmosphereProcess {
   int          m_photo_table_len = 0;
   bool         m_have_photo_table = false;
   // O3 column densities per column (molecules/cm^2) for photo table
-  view_2d      m_o3col;
+  view_2d      m_o3col_dens;
   // Exogenous O3 column density reader/interpolated field (top-of-atmosphere offset)
   std::shared_ptr<DataInterpolation> m_data_interp_exo_coldens;
   std::vector<Field> m_exo_coldens_fields;
