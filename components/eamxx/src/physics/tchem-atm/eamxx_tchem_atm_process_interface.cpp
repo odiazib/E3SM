@@ -50,11 +50,11 @@ void TChemATM::create_requests() {
 
 
   // Build TChem kinetic model metadata from the configured chemistry file.
-  // std::cout << "[TChemATM] KineticModelData\n";
+  std::cout << "[TChemATM] KineticModelData\n";
   m_kmd = TChem::KineticModelData(chem_file);
-  // std::cout << "[TChemATM] createNCAR_KineticModelConstData\n";
+  std::cout << "[TChemATM] createNCAR_KineticModelConstData\n";
   m_kmcd = TChem::createNCAR_KineticModelConstData<tchem_device_type>(m_kmd);
-  // std::cout << "[TChemATM] Done KineticModelData "<<m_kmd.nSpec_ <<"\n";
+  std::cout << "[TChemATM] Done KineticModelData "<<m_kmd.nSpec_ <<"\n";
 
   // Build m_species_mw indexed by TChem species order.
   // molecular_weights in the parameter list is a sublist mapping
@@ -75,7 +75,7 @@ void TChemATM::create_requests() {
     m_species_mw[i] = mw_list.get<double>(sname);
     // std::cout << "[TChemATM] Molecular weight for species "<< i <<" " << sname << " = " << m_species_mw[i] << " g/mol\n";
   }
-  // std::cout << "[TChemATM] Done loading molecular weights\n";
+  std::cout << "[TChemATM] Done loading molecular weights\n";
   m_tchem_ready = true;
    // std::cout << "[TChemATM] Done m_species_mw\n";
 
@@ -97,7 +97,7 @@ void TChemATM::create_requests() {
     const std::string sname(&species_names_host(m_kmcd.M_index + 6 + j, 0));
     add_field<Updated>(sname, scalar3d_mid, q_unit, grid_name);
   }
-  // std::cout << "[TChemATM] Done create_requests\n";
+  std::cout << "[TChemATM] Done create_requests\n";
 }
 
 void TChemATM::initialize_impl(const RunType /* run_type */) {
@@ -562,42 +562,39 @@ void TChemATM::run_impl(const double dt) {
   constexpr Real boltz_cgs = 0.13806500000000001E-015;
   // Compute invariants:
   // step 1: M [molecules/cm^3] = Pa_xfac * P [Pa] / (boltz_cgs * T [K])
+
   const int m_state_col = m_kmcd.M_index + 3;
   constexpr int num_tracer_cnst = 3;
   Kokkos::parallel_for(
-      "tchem_compute_M", Kokkos::RangePolicy<TChem::exec_space>(0, m_nbatch),
-      KOKKOS_LAMBDA(const int i) {
-        const int icol = i / nlevs;
-        const int ilev = i % nlevs;
+      "tchem_compute_M", Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
+      KOKKOS_LAMBDA(const int isample) {
+        const int icol = m_sample_icol(isample);
+        const int ilev = m_sample_ilev(isample);
         const Real m_value =
             Pa_xfac * p_mid(icol, ilev) / (boltz_cgs * t_mid(icol, ilev));
-        state(i, m_state_col) = m_value;
+        state(isample, m_state_col) = m_value;
         // N2 = 0.79 * M
-        state(i, m_state_col + 1) = 0.79;// * m_value;
+        state(isample, m_state_col + 1) = 0.79;  // * m_value;
         // O2 = 0.21 * M
-        state(i, m_state_col + 2) = 0.21;// * m_value;
+        state(isample, m_state_col + 2) = 0.21;  // * m_value;
         // H2O = qv * M / (1 + qv)
-        state(i, m_state_col + 3) = qv(icol, ilev) / (1.0 + qv(icol, ilev));//m_value;
+        state(isample, m_state_col + 3) =
+            qv(icol, ilev) / (1.0 + qv(icol, ilev));  // m_value;
         // H2 = 5.5e-7 * M
-        state(i, m_state_col + 4) = 5.5e-7;// * m_value;
+        state(isample, m_state_col + 4) = 5.5e-7;  // * m_value;
         // CH4 =0;
-        state(i, m_state_col + 5) = 0.0;
-        
+        state(isample, m_state_col + 5) = 0.0;
       });
- 
+
 
   for (int j = 0; j < num_tracer_cnst; ++j) {
     const auto& tracer_name = std::string(&species_names_host(m_kmcd.M_index + 6 + j, 0));
     // std::cout << "[TChemATM] Filling state column for invariant tracer " << tracer_name << "\n";
     const auto& q_tracer = get_field_out(tracer_name).get_view<Real **>();
     const int state_col_j = m_state_col + 6 + j;
-    Kokkos::parallel_for(
-      "tchem_compute_cnst_tracer", Kokkos::RangePolicy<TChem::exec_space>(0, m_nbatch),
-      KOKKOS_LAMBDA(const int i) {
-        const int icol = i / nlevs;
-        const int ilev = i % nlevs;
-        state(i, state_col_j) = q_tracer(icol, ilev);// * state(i, m_state_col);
-      });
+    tchem::pack_into_state(state, q_tracer, m_sample_icol, m_sample_ilev,
+                           m_nsamples, state_col_j,
+                           "tchem_compute_cnst_tracer");
   }
   // Time loop: mirrors TChem_AtmosphericChemistryE3SM.cpp standalone example.
   // Solver type and time-stepping parameters are controlled via namelist.
@@ -605,10 +602,10 @@ void TChemATM::run_impl(const double dt) {
   const auto& tadv        = m_tadv;
   const auto& t_view      = m_t;
   const auto& dt_view     = m_dt_view;
-
+#if 1
   for (int iter = 0; iter < m_max_time_iterations && tsum <= dt * 0.9999;
        ++iter) {
-#if 1
+
     if (m_solver_type == "implicit_euler") {
       implicit_euler_type::runDeviceBatch(
           policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
@@ -625,7 +622,7 @@ void TChemATM::run_impl(const double dt) {
     TChem::exec_space().fence();
     tsum = 0;
     Kokkos::parallel_reduce(
-        Kokkos::RangePolicy<TChem::exec_space>(0, m_nbatch),
+        Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
         KOKKOS_LAMBDA(const int i, TChem::real_type& update) {
           tadv(i)._tbeg = t_view(i);
           tadv(i)._dt   = dt_view(i);
@@ -633,7 +630,7 @@ void TChemATM::run_impl(const double dt) {
         },
         tsum);
     Kokkos::fence();
-    tsum /= m_nbatch;
+    tsum /= m_nsamples;
   }
 #endif
   // Print O3 VMR for column 0 after the TChem run.
