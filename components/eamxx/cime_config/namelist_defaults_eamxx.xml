@@ -628,6 +628,9 @@ be lost if SCREAM_HACK_XML is not enabled.
         <SOAG33   type="real" doc="Molecular weight of SOAG33 (g/mol)">250.445000</SOAG33>
         <SOAG34   type="real" doc="Molecular weight of SOAG34 (g/mol)">250.445000</SOAG34>
         <SOAG35   type="real" doc="Molecular weight of SOAG35 (g/mol)">250.445000</SOAG35>
+        <soa_a1   type="real" doc="Molecular weight of soa_a1 (g/mol)">250.445000</soa_a1>
+        <soa_a2   type="real" doc="Molecular weight of soa_a2 (g/mol)">250.445000</soa_a2>
+        <soa_a3   type="real" doc="Molecular weight of soa_a3 (g/mol)">250.445000</soa_a3>
       </molecular_weights>
     </tchem_atm>
 
