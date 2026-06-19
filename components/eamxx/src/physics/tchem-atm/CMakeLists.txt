@@ -67,3 +67,7 @@ if (TARGET eamxx_physics)
   # Add this library to eamxx_physics
   target_link_libraries(eamxx_physics INTERFACE eamxx_tchem_atm)
 endif()
+
+if (NOT SCREAM_LIB_ONLY)
+  add_subdirectory(tests)
+endif()
