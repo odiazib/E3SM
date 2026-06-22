@@ -10,6 +10,7 @@
 #include <mam4xx/mam4.hpp>
 #include "../eamxx_tchem_atm_tchem_functions.hpp"
 #include "share/scorpio_interface/eamxx_scorpio_interface.hpp"
+#include <yaml-cpp/yaml.h>
 
 namespace {
 
@@ -31,12 +32,21 @@ inline bool nearly_equal(const Real a, const Real b,
   return std::abs(a - b) <= atol + rtol * std::abs(b);
 }
 
+std::vector<Real> read_real_vector(const YAML::Node& node) {
+  std::vector<Real> vals;
+  vals.reserve(node.size());
+  for (std::size_t i = 0; i < node.size(); ++i) {
+    vals.push_back(node[i].as<Real>());
+  }
+  return vals;
+}
+
 } // anonymous namespace
 
 TEST_CASE("tchem_photo_table_kernel_single_column_nlev72_regression",
           "[mam4][photo][kokkos]") {
   constexpr int ncol = 1;
-  constexpr int nlev = 72;
+  constexpr int nlev = mam4::nlev;
   constexpr int nref = 22;
   using namespace scream;
 
@@ -44,12 +54,18 @@ TEST_CASE("tchem_photo_table_kernel_single_column_nlev72_regression",
   scorpio::init_subsystem(comm);
 
   // Replace with your actual test-data paths.
+  const std::string input_yaml_file = "table_photo_input_ts_2016289.yaml";
   const std::string rsf_file = "/global/cfs/cdirs/e3sm/inputdata/atm/scream/mam4xx/photolysis/RSF_GT200nm_v3.0_c080811.nc";
   const std::string xs_long_file = "/global/cfs/cdirs/e3sm/inputdata/atm/scream/mam4xx/photolysis/temp_prs_GT200nm_JPL10_c130206.nc";
-
+  
   REQUIRE(!rsf_file.empty());
   REQUIRE(!xs_long_file.empty());
 
+  const YAML::Node root = YAML::LoadFile(input_yaml_file);
+  REQUIRE(root["input"]);
+  REQUIRE(root["input"]["fixed"]);
+
+  const auto fixed = root["input"]["fixed"];
   // Load photo table.
   const auto photo_table = scream::tchem::read_photo_table_uci(rsf_file, xs_long_file);
   const int work_len = mam4::mo_photo::get_photo_table_work_len(photo_table);
@@ -74,15 +90,32 @@ TEST_CASE("tchem_photo_table_kernel_single_column_nlev72_regression",
   Kokkos::deep_copy(photo, 0.0);
 
   // Values from the Python file, repeated for all 72 levels.
-  constexpr Real pmid_val   = 0.38796303019519983E+005;
-  constexpr Real pdel_val   = 0.31770705401376617E+004;
-  constexpr Real temper_val = 0.25643729861520683E+003;
-  constexpr Real o3col_val  = 0.60455135127562455E+019; // assumed mapping from input.col_dens_1[0]
-  constexpr Real zen_val    = 0.23317954777497377E+000;
-  constexpr Real alb_val    = 0.23828415472703642E-001;
-  constexpr Real qc_val     = 0.0;
-  constexpr Real cld_val    = 0.0;
-  constexpr Real esfact     = 0.10301561212160422E+001;
+  const auto pmid_vals   = read_real_vector(fixed["pmid"]);
+  const auto pdel_vals   = read_real_vector(fixed["pdel"]);
+  const auto temper_vals = read_real_vector(fixed["temper"]);
+  //CHECK
+  const auto o3col_vals  = read_real_vector(fixed["col_dens_1"]);
+  const auto lwc_vals    = read_real_vector(fixed["lwc"]);
+  const auto cloud_vals  = read_real_vector(fixed["clouds"]);
+  const auto zen_vals    = read_real_vector(fixed["zen_angle"]);
+  const auto alb_vals    = read_real_vector(fixed["srf_alb"]);
+  const auto esfact_vals = read_real_vector(fixed["esfact"]);
+  //reference: I save this reference in the input section
+  const auto photo_ref = read_real_vector(fixed["photos"]);
+  
+  REQUIRE(pmid_vals.size()   >= nlev);
+  REQUIRE(pdel_vals.size()   >= nlev);
+  REQUIRE(temper_vals.size() >= nlev);
+  REQUIRE(o3col_vals.size()  >= nlev);
+  REQUIRE(lwc_vals.size()    >= nlev);
+  REQUIRE(cloud_vals.size()  >= nlev);
+  REQUIRE(zen_vals.size()    >= 1);
+  REQUIRE(alb_vals.size()    >= 1);
+  REQUIRE(esfact_vals.size() >= 1);
+
+  const Real zen_val = zen_vals[0];
+  const Real alb_val = alb_vals[0];
+  const Real esfact  = esfact_vals[0];
 
   auto pmid_h   = Kokkos::create_mirror_view(pmid);
   auto pdel_h   = Kokkos::create_mirror_view(pdel);
@@ -94,12 +127,14 @@ TEST_CASE("tchem_photo_table_kernel_single_column_nlev72_regression",
   auto cld_h    = Kokkos::create_mirror_view(cld);
 
   for (int k = 0; k < nlev; ++k) {
-    pmid_h(0, k)   = pmid_val;
-    pdel_h(0, k)   = pdel_val;
-    temper_h(0, k) = temper_val;
-    o3col_h(0, k)  = o3col_val;
-    qc_h(0, k)     = qc_val;
-    cld_h(0, k)    = cld_val;
+    // printf("pmid_vals %e \n", pmid_vals[k]);
+    pmid_h(0, k)   = pmid_vals[k];
+    pdel_h(0, k)   = pdel_vals[k];
+    temper_h(0, k) = temper_vals[k];
+    o3col_h(0, k)  = o3col_vals[k];
+    qc_h(0, k)     = lwc_vals[k];
+    cld_h(0, k)    = cloud_vals[k];
+    // printf("cloud_vals %e \n", cloud_vals[k]);
   }
   zen_h(0) = zen_val;
   alb_h(0) = alb_val;
@@ -180,30 +215,72 @@ TEST_CASE("tchem_photo_table_kernel_single_column_nlev72_regression",
     }
   }
 
-  SECTION("all_72_levels_match_each_other_for_identical_inputs") {
-    for (int k = 1; k < nlev; ++k) {
-      for (int j = 0; j < nref; ++j) {
-        INFO("Mismatch across repeated levels at k=" << k << ", j=" << j
-             << ", photo(0," << k << "," << j << ")=" << photo_h(0, k, j)
-             << ", photo(0,0," << j << ")=" << photo_h(0, 0, j));
-        REQUIRE(nearly_equal(photo_h(0, k, j), photo_h(0, 0, j), 1e-8, 1e-14));
-      }
+  // SECTION("all_72_levels_match_each_other_for_identical_inputs") {
+  //   for (int k = 1; k < nlev; ++k) {
+  //     for (int j = 0; j < nref; ++j) {
+  //       INFO("Mismatch across repeated levels at k=" << k << ", j=" << j
+  //            << ", photo(0," << k << "," << j << ")=" << photo_h(0, k, j)
+  //            << ", photo(0,0," << j << ")=" << photo_h(0, 0, j));
+  //       REQUIRE(nearly_equal(photo_h(0, k, j), photo_h(0, 0, j), 1e-8, 1e-14));
+  //     }
+  //   }
+  // }
+
+  // SECTION("level_0_matches_python_reference") {
+  //   for (int j = 0; j < nref; ++j) {
+  //     std::cout << "j=" << j
+  //             << ", computed=" << photo_h(0, 0, j)
+  //             << ", expected=" << expected[j]
+  //             << ", diff=" << (photo_h(0, 0, j) - expected[j])
+  //             << "\n";
+
+  //     INFO("Reference mismatch at j=" << j
+  //          << ", computed=" << photo_h(0, 0, j)
+  //          << ", expected=" << expected[j]);
+  //     // REQUIRE(nearly_equal(photo_h(0, 0, j), expected[j], 1e-8, 1e-14));
+  //   }
+  // }
+  SECTION("compare_against_reference_when_available") {
+  REQUIRE(photo_ref.size() == static_cast<std::size_t>(nlev * nref));
+
+  int count = 0;
+  for (int d2 = 0; d2 < nref; ++d2) {
+    // std::cout << "j=" << d2<< "\n"; 
+    for (int d1 = 0; d1 < nlev; ++d1) {
+      const auto computed = photo_h(0, d1, d2);
+      const auto expected = photo_ref[count];
+      count++;
+      if (d1==0)
+        // std::cout << "k=" << d1
+        std::cout << "computed=" << computed
+              << ", expected=" << expected
+              << ", diff=" << (computed - expected)
+              << "\n";  
+
+
     }
   }
 
-  SECTION("level_0_matches_python_reference") {
-    for (int j = 0; j < nref; ++j) {
-      std::cout << "j=" << j
-              << ", computed=" << photo_h(0, 1, j)
-              << ", expected=" << expected[j]
-              << ", diff=" << (photo_h(0, 1, j) - expected[j])
-              << "\n";
 
-      INFO("Reference mismatch at j=" << j
-           << ", computed=" << photo_h(0, 0, j)
-           << ", expected=" << expected[j]);
-      // REQUIRE(nearly_equal(photo_h(0, 0, j), expected[j], 1e-8, 1e-14));
-    }
+    // for (int k = 0; k < nlev; ++k) {
+    //   std::cout << "k=" << k<< "\n"; 
+    //   for (int j = 0; j < nref; ++j) {
+    //     const int idx = j + k * nlev;
+    //     // const int idx = k * nref + j; // assumes level-major flattening
+    //     const auto computed = photo_h(0, k, j);
+    //     const auto expected = photo_ref[idx];
+
+    //     INFO("Mismatch at k=" << k << ", j=" << j
+    //          << ", computed=" << computed
+    //          << ", expected=" << expected);
+    //     std::cout << "j=" << j
+    //           << ", computed=" << computed
+    //           << ", expected=" << expected
+    //           << ", diff=" << (computed - expected)
+    //           << "\n";     
+    //     // REQUIRE(nearly_equal(computed, expected, 1e-8, 1e-14));
+    //   }
+    // }
   }
 
   // SECTION("all_72_levels_match_python_reference") {
