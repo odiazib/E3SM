@@ -52,6 +52,232 @@ std::vector<int> read_int_vector(const YAML::Node& node) {
 
 } // anonymous namespace
 
+
+TEST_CASE("tchem_photo_table_uci_raw_table_regression",
+          "[mam4][photo][kokkos]") {
+  using namespace scream;
+
+  ekat::Comm comm(MPI_COMM_WORLD);
+  scorpio::init_subsystem(comm);
+
+  // Replace with your actual test-data paths.
+  const std::string input_yaml_file = "jlong_input_ts_2016289.yaml";
+  const std::string rsf_file = "/global/cfs/cdirs/e3sm/inputdata/atm/scream/mam4xx/photolysis/RSF_GT200nm_v3.0_c080811.nc";
+  const std::string xs_long_file = "/global/cfs/cdirs/e3sm/inputdata/atm/scream/mam4xx/photolysis/temp_prs_GT200nm_JPL10_c130206.nc";
+
+  REQUIRE(!rsf_file.empty());
+  REQUIRE(!xs_long_file.empty());
+
+  const YAML::Node root = YAML::LoadFile(input_yaml_file);
+  REQUIRE(root["input"]);
+  REQUIRE(root["input"]["fixed"]);
+  const auto fixed = root["input"]["fixed"];
+
+  // ---- Load the table under test -------------------------------------
+  const auto photo_table = scream::tchem::read_photo_table_uci(rsf_file, xs_long_file);
+
+  // ---- Pull reference data out of the YAML ----------------------------
+  const auto nw_ref       = read_int_vector(fixed["nw"])[0];
+  const auto numj_ref     = read_int_vector(fixed["numj"])[0];
+  const auto shape_ref    = read_int_vector(fixed["shape_of_rsf_tab"]);
+  REQUIRE(shape_ref.size() == 5);
+  const int nw_shape       = shape_ref[0];
+  const int nump_shape     = shape_ref[1];
+  const int numsza_shape   = shape_ref[2];
+  const int numcolo3_shape = shape_ref[3];
+  const int numalb_shape   = shape_ref[4];
+
+  const auto sza_ref       = read_real_vector(fixed["sza"]);
+  const auto del_sza_ref   = read_real_vector(fixed["del_sza"]);
+  const auto alb_ref       = read_real_vector(fixed["alb"]);
+  const auto del_alb_ref   = read_real_vector(fixed["del_alb"]);
+  const auto colo3_ref     = read_real_vector(fixed["colo3"]);
+  const auto o3rat_ref     = read_real_vector(fixed["o3rat"]);
+  const auto del_o3rat_ref = read_real_vector(fixed["del_o3rat"]);
+  const auto etfphot_ref   = read_real_vector(fixed["etfphot"]);
+  const auto prs_ref       = read_real_vector(fixed["prs"]);
+  const auto dprs_ref      = read_real_vector(fixed["dprs"]);
+  const auto rsf_tab_2d    = read_real_vector(fixed["rsf_tab_2d"]);
+  const auto xsqy_h_2d    = read_real_vector(fixed["xsqy_2d"]);
+  
+
+  // ---- Sanity-check dimensions against the YAML's metadata -----------
+  REQUIRE(photo_table.nw       == nw_ref);
+  REQUIRE(photo_table.numj     == numj_ref);
+  REQUIRE(photo_table.nw       == nw_shape);
+  REQUIRE(photo_table.nump     == nump_shape);
+  REQUIRE(photo_table.numsza   == numsza_shape);
+  REQUIRE(photo_table.numcolo3 == numcolo3_shape);
+  REQUIRE(photo_table.numalb   == numalb_shape);
+
+  REQUIRE(static_cast<int>(sza_ref.size())       == photo_table.numsza);
+  REQUIRE(static_cast<int>(del_sza_ref.size())   == photo_table.numsza - 1);
+  REQUIRE(static_cast<int>(alb_ref.size())       == photo_table.numalb);
+  REQUIRE(static_cast<int>(del_alb_ref.size())   == photo_table.numalb - 1);
+  REQUIRE(static_cast<int>(colo3_ref.size())     == photo_table.nump);
+  REQUIRE(static_cast<int>(o3rat_ref.size())     == photo_table.numcolo3);
+  REQUIRE(static_cast<int>(del_o3rat_ref.size()) == photo_table.numcolo3 - 1);
+  REQUIRE(static_cast<int>(etfphot_ref.size())   == photo_table.nw);
+  REQUIRE(static_cast<int>(prs_ref.size())       == photo_table.np_xs);
+  REQUIRE(static_cast<int>(dprs_ref.size())      == photo_table.np_xs - 1);
+  REQUIRE(rsf_tab_2d.size() ==
+          static_cast<std::size_t>(photo_table.nw) *
+          static_cast<std::size_t>(photo_table.nump));
+
+  // ---- Copy the 1D table views to host for comparison -----------------
+  auto sza_h       = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.sza);
+  auto del_sza_h    = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.del_sza);
+  auto alb_h        = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.alb);
+  auto del_alb_h    = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.del_alb);
+  auto colo3_h      = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.colo3);
+  auto o3rat_h      = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.o3rat);
+  auto del_o3rat_h  = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.del_o3rat);
+  auto etfphot_h    = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.etfphot);
+  auto prs_h        = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.prs);
+  auto dprs_h       = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.dprs);
+  auto rsf_tab_h    = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.rsf_tab);
+  auto xsqy_h    = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.xsqy);
+
+  SECTION("sza_matches_reference") {
+    for (int i = 0; i < photo_table.numsza; ++i) {
+      INFO("sza mismatch at i=" << i << ", computed=" << sza_h(i)
+           << ", expected=" << sza_ref[i]);
+      REQUIRE(nearly_equal(sza_h(i), sza_ref[i]));
+    }
+  }
+
+  SECTION("del_sza_matches_reference") {
+    for (int i = 0; i < photo_table.numsza - 1; ++i) {
+      INFO("del_sza mismatch at i=" << i << ", computed=" << del_sza_h(i)
+           << ", expected=" << del_sza_ref[i]);
+      REQUIRE(nearly_equal(del_sza_h(i), del_sza_ref[i]));
+    }
+  }
+
+  SECTION("alb_matches_reference") {
+    for (int i = 0; i < photo_table.numalb; ++i) {
+      INFO("alb mismatch at i=" << i << ", computed=" << alb_h(i)
+           << ", expected=" << alb_ref[i]);
+      REQUIRE(nearly_equal(alb_h(i), alb_ref[i]));
+    }
+  }
+
+  SECTION("del_alb_matches_reference") {
+    for (int i = 0; i < photo_table.numalb - 1; ++i) {
+      INFO("del_alb mismatch at i=" << i << ", computed=" << del_alb_h(i)
+           << ", expected=" << del_alb_ref[i]);
+      REQUIRE(nearly_equal(del_alb_h(i), del_alb_ref[i]));
+    }
+  }
+
+  SECTION("colo3_matches_reference") {
+    for (int i = 0; i < photo_table.nump; ++i) {
+      INFO("colo3 mismatch at i=" << i << ", computed=" << colo3_h(i)
+           << ", expected=" << colo3_ref[i]);
+      REQUIRE(nearly_equal(colo3_h(i), colo3_ref[i]));
+    }
+  }
+
+  SECTION("o3rat_matches_reference") {
+    for (int i = 0; i < photo_table.numcolo3; ++i) {
+      INFO("o3rat mismatch at i=" << i << ", computed=" << o3rat_h(i)
+           << ", expected=" << o3rat_ref[i]);
+      // printf("o3rat mismatch at i=%d, computed=%g, expected=%g\n",
+      //  i, o3rat_h(i), o3rat_ref[i]);     
+      REQUIRE(nearly_equal(o3rat_h(i), o3rat_ref[i]));
+    }
+  }
+
+  SECTION("del_o3rat_matches_reference") {
+    for (int i = 0; i < photo_table.numcolo3 - 1; ++i) {
+      INFO("del_o3rat mismatch at i=" << i << ", computed=" << del_o3rat_h(i)
+           << ", expected=" << del_o3rat_ref[i]);
+      // printf("del_o3rat mismatch at i=%d, computed=%g, expected=%g\n",
+      //  i, del_o3rat_h(i), del_o3rat_ref[i]);     
+      REQUIRE(nearly_equal(del_o3rat_h(i), del_o3rat_ref[i]));
+    }
+  }
+  
+  SECTION("prs_matches_reference") {
+    for (int i = 0; i < photo_table.np_xs; ++i) {
+      INFO("prs mismatch at i=" << i << ", computed=" << prs_h(i)
+           << ", expected=" << prs_ref[i]);
+      REQUIRE(nearly_equal(prs_h(i), prs_ref[i]));
+    }
+  }
+
+  SECTION("dprs_matches_reference") {
+    for (int i = 0; i < photo_table.np_xs - 1; ++i) {
+      INFO("dprs mismatch at i=" << i << ", computed=" << dprs_h(i)
+           << ", expected=" << dprs_ref[i]);
+      REQUIRE(nearly_equal(dprs_h(i), dprs_ref[i]));
+    }
+  }
+
+  SECTION("etfphot_matches_reference") {
+    for (int i = 0; i < photo_table.nw; ++i) {
+      INFO("etfphot mismatch at i=" << i << ", computed=" << etfphot_h(i)
+           << ", expected=" << etfphot_ref[i]);
+      // printf("etfphot mismatch at i=%d, computed=%g, expected=%g\n",
+      //  i, etfphot_h(i), etfphot_ref[i]);     
+      REQUIRE(nearly_equal(etfphot_h(i), etfphot_ref[i]));
+    }
+  }
+
+  // ---- rsf_tab(:,:,0,0,0) slice, unflattened from Fortran column-major
+  // order (k = i + j*nw, i.e. the wavelength index i varies fastest).
+  SECTION("xsqy_h_corner_slice_matches_reference") {
+    const int nw   = photo_table.nw;
+    const int nump = photo_table.nump;
+    int count = 0;
+    for (int d2 = 0; d2 < nump; ++d2) {
+      for (int d1 = 0; d1 < nw; ++d1) {
+        const auto computed = rsf_tab_h(d1, d2, 0, 0, 0);;
+        const auto expected = rsf_tab_2d[count];
+        count++;
+        INFO("rsf_tab mismatch at (i=" << d1 << ", j=" << d2
+               << "), computed=" << computed << ", expected=" << expected);
+        REQUIRE(nearly_equal(computed, expected,1e-6));
+        // std::cout << "k=" << d1
+        // std::cout << "computed=" << computed
+        //       << ", expected=" << expected
+        //       << ", diff=" << (computed - expected)
+        //       << "\n";  
+  }
+}
+  }
+
+    SECTION("xsqy_h_corner_slice_matches_reference") {
+    const int nw   = photo_table.nw;
+    const int numj = photo_table.numj;
+    int count = 0;
+    std::cout << " xsqy_h_corner_slice_matches_reference \n";
+    for (int d2 = 0; d2 < nw; ++d2) {
+      // std::cout << "d2 = "<< d2<<"\n";
+      for (int d1 = 0; d1 < numj; ++d1) {
+        const auto computed = xsqy_h(d1, d2, 0, 0);;
+        const auto expected = xsqy_h_2d[count];
+        count++;
+        // std::cout << "computed=" << computed
+        //       << ", expected=" << expected
+        //       << ", diff=" << (computed - expected)
+        //       << "\n"; 
+        INFO("rsf_tab mismatch at (i=" << d1 << ", j=" << d2
+               << "), computed=" << computed << ", expected=" << expected);
+        REQUIRE(nearly_equal(computed, expected,0));
+        // std::cout << "k=" << d1
+        // std::cout << "computed=" << computed
+        //       << ", expected=" << expected
+        //       << ", diff=" << (computed - expected)
+        //       << "\n";  
+  }
+}
+  }
+
+  scorpio::finalize_subsystem();
+}
+
+
 TEST_CASE("tchem_photo_table_kernel_single_column_nlev72_regression",
           "[mam4][photo][kokkos]") {
   constexpr int ncol = 1;
@@ -187,30 +413,30 @@ TEST_CASE("tchem_photo_table_kernel_single_column_nlev72_regression",
     });
   Kokkos::fence();
 
-  const std::array<Real, nref> expected = {{
-    0.10384950618677957E-003,
-    0.00000000000000000E+000,
-    0.12486522593829268E-004,
-    0.64723189182607361E-004,
-    0.88690605167060716E-004,
-    0.10211860107866727E-004,
-    0.10211860107866727E-004,
-    0.13018752803418717E-001,
-    0.20679806810851048E+000,
-    0.10945949633620182E-001,
-    0.61631151464815008E-004,
-    0.17414432160963850E-007,
-    0.14203223665893713E-005,
-    0.28412855422172683E-005,
-    0.21666703381029496E-004,
-    0.28473882789617557E-004,
-    0.12167127640722079E-005,
-    0.21488166054649110E-005,
-    0.16537890208910176E-004,
-    0.52075011213674859E-005,
-    0.52075011213674859E-005,
-    0.52075011213674859E-005
-  }};
+  // const std::array<Real, nref> expected = {{
+  //   0.10384950618677957E-003,
+  //   0.00000000000000000E+000,
+  //   0.12486522593829268E-004,
+  //   0.64723189182607361E-004,
+  //   0.88690605167060716E-004,
+  //   0.10211860107866727E-004,
+  //   0.10211860107866727E-004,
+  //   0.13018752803418717E-001,
+  //   0.20679806810851048E+000,
+  //   0.10945949633620182E-001,
+  //   0.61631151464815008E-004,
+  //   0.17414432160963850E-007,
+  //   0.14203223665893713E-005,
+  //   0.28412855422172683E-005,
+  //   0.21666703381029496E-004,
+  //   0.28473882789617557E-004,
+  //   0.12167127640722079E-005,
+  //   0.21488166054649110E-005,
+  //   0.16537890208910176E-004,
+  //   0.52075011213674859E-005,
+  //   0.52075011213674859E-005,
+  //   0.52075011213674859E-005
+  // }};
 
   auto photo_h = Kokkos::create_mirror_view_and_copy(HostSpace(), photo);
 
@@ -260,12 +486,15 @@ TEST_CASE("tchem_photo_table_kernel_single_column_nlev72_regression",
       const auto expected = photo_ref[count];
       count++;
       if (d1==0)
-        // std::cout << "k=" << d1
-        std::cout << "computed=" << computed
+      {  // std::cout << "k=" << d1
+        Real diff=computed - expected;       
+        Real rel = diff/expected;
+        std::cout <<"ireac "<< d2 << " computed=" << computed
               << ", expected=" << expected
-              << ", diff=" << (computed - expected)
+              << ", diff=" << (diff)
+              << ", ref=" << (rel)
               << "\n";  
-
+      }
 
     }
   }
@@ -303,219 +532,5 @@ TEST_CASE("tchem_photo_table_kernel_single_column_nlev72_regression",
   //   }
   // }
 
-  scorpio::finalize_subsystem();
-}
-
-TEST_CASE("tchem_photo_table_uci_raw_table_regression",
-          "[mam4][photo][kokkos]") {
-  using namespace scream;
-
-  ekat::Comm comm(MPI_COMM_WORLD);
-  scorpio::init_subsystem(comm);
-
-  // Replace with your actual test-data paths.
-  const std::string input_yaml_file = "jlong_input_ts_2016289.yaml";
-  const std::string rsf_file = "/global/cfs/cdirs/e3sm/inputdata/atm/scream/mam4xx/photolysis/RSF_GT200nm_v3.0_c080811.nc";
-  const std::string xs_long_file = "/global/cfs/cdirs/e3sm/inputdata/atm/scream/mam4xx/photolysis/temp_prs_GT200nm_JPL10_c130206.nc";
-
-  REQUIRE(!rsf_file.empty());
-  REQUIRE(!xs_long_file.empty());
-
-  const YAML::Node root = YAML::LoadFile(input_yaml_file);
-  REQUIRE(root["input"]);
-  REQUIRE(root["input"]["fixed"]);
-  const auto fixed = root["input"]["fixed"];
-
-  // ---- Load the table under test -------------------------------------
-  const auto photo_table = scream::tchem::read_photo_table_uci(rsf_file, xs_long_file);
-
-  // ---- Pull reference data out of the YAML ----------------------------
-  const auto nw_ref       = read_int_vector(fixed["nw"])[0];
-  const auto numj_ref     = read_int_vector(fixed["numj"])[0];
-  const auto shape_ref    = read_int_vector(fixed["shape_of_rsf_tab"]);
-  REQUIRE(shape_ref.size() == 5);
-  const int nw_shape       = shape_ref[0];
-  const int nump_shape     = shape_ref[1];
-  const int numsza_shape   = shape_ref[2];
-  const int numcolo3_shape = shape_ref[3];
-  const int numalb_shape   = shape_ref[4];
-
-  const auto sza_ref       = read_real_vector(fixed["sza"]);
-  const auto del_sza_ref   = read_real_vector(fixed["del_sza"]);
-  const auto alb_ref       = read_real_vector(fixed["alb"]);
-  const auto del_alb_ref   = read_real_vector(fixed["del_alb"]);
-  const auto colo3_ref     = read_real_vector(fixed["colo3"]);
-  const auto o3rat_ref     = read_real_vector(fixed["o3rat"]);
-  const auto del_o3rat_ref = read_real_vector(fixed["del_o3rat"]);
-  const auto etfphot_ref   = read_real_vector(fixed["etfphot"]);
-  const auto prs_ref       = read_real_vector(fixed["prs"]);
-  const auto dprs_ref      = read_real_vector(fixed["dprs"]);
-  const auto rsf_tab_2d    = read_real_vector(fixed["rsf_tab_2d"]);
-
-  // ---- Sanity-check dimensions against the YAML's metadata -----------
-  REQUIRE(photo_table.nw       == nw_ref);
-  REQUIRE(photo_table.numj     == numj_ref);
-  REQUIRE(photo_table.nw       == nw_shape);
-  REQUIRE(photo_table.nump     == nump_shape);
-  REQUIRE(photo_table.numsza   == numsza_shape);
-  REQUIRE(photo_table.numcolo3 == numcolo3_shape);
-  REQUIRE(photo_table.numalb   == numalb_shape);
-
-  REQUIRE(static_cast<int>(sza_ref.size())       == photo_table.numsza);
-  REQUIRE(static_cast<int>(del_sza_ref.size())   == photo_table.numsza - 1);
-  REQUIRE(static_cast<int>(alb_ref.size())       == photo_table.numalb);
-  REQUIRE(static_cast<int>(del_alb_ref.size())   == photo_table.numalb - 1);
-  REQUIRE(static_cast<int>(colo3_ref.size())     == photo_table.nump);
-  REQUIRE(static_cast<int>(o3rat_ref.size())     == photo_table.numcolo3);
-  REQUIRE(static_cast<int>(del_o3rat_ref.size()) == photo_table.numcolo3 - 1);
-  REQUIRE(static_cast<int>(etfphot_ref.size())   == photo_table.nw);
-  REQUIRE(static_cast<int>(prs_ref.size())       == photo_table.np_xs);
-  REQUIRE(static_cast<int>(dprs_ref.size())      == photo_table.np_xs - 1);
-  REQUIRE(rsf_tab_2d.size() ==
-          static_cast<std::size_t>(photo_table.nw) *
-          static_cast<std::size_t>(photo_table.nump));
-
-  // ---- Copy the 1D table views to host for comparison -----------------
-  auto sza_h       = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.sza);
-  auto del_sza_h    = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.del_sza);
-  auto alb_h        = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.alb);
-  auto del_alb_h    = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.del_alb);
-  auto colo3_h      = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.colo3);
-  auto o3rat_h      = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.o3rat);
-  auto del_o3rat_h  = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.del_o3rat);
-  auto etfphot_h    = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.etfphot);
-  auto prs_h        = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.prs);
-  auto dprs_h       = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.dprs);
-  auto rsf_tab_h    = Kokkos::create_mirror_view_and_copy(HostSpace(), photo_table.rsf_tab);
-
-  SECTION("sza_matches_reference") {
-    for (int i = 0; i < photo_table.numsza; ++i) {
-      INFO("sza mismatch at i=" << i << ", computed=" << sza_h(i)
-           << ", expected=" << sza_ref[i]);
-      REQUIRE(nearly_equal(sza_h(i), sza_ref[i]));
-    }
-  }
-
-  SECTION("del_sza_matches_reference") {
-    for (int i = 0; i < photo_table.numsza - 1; ++i) {
-      INFO("del_sza mismatch at i=" << i << ", computed=" << del_sza_h(i)
-           << ", expected=" << del_sza_ref[i]);
-      REQUIRE(nearly_equal(del_sza_h(i), del_sza_ref[i]));
-    }
-  }
-
-  SECTION("alb_matches_reference") {
-    for (int i = 0; i < photo_table.numalb; ++i) {
-      INFO("alb mismatch at i=" << i << ", computed=" << alb_h(i)
-           << ", expected=" << alb_ref[i]);
-      REQUIRE(nearly_equal(alb_h(i), alb_ref[i]));
-    }
-  }
-
-  SECTION("del_alb_matches_reference") {
-    for (int i = 0; i < photo_table.numalb - 1; ++i) {
-      INFO("del_alb mismatch at i=" << i << ", computed=" << del_alb_h(i)
-           << ", expected=" << del_alb_ref[i]);
-      REQUIRE(nearly_equal(del_alb_h(i), del_alb_ref[i]));
-    }
-  }
-
-  SECTION("colo3_matches_reference") {
-    for (int i = 0; i < photo_table.nump; ++i) {
-      INFO("colo3 mismatch at i=" << i << ", computed=" << colo3_h(i)
-           << ", expected=" << colo3_ref[i]);
-      REQUIRE(nearly_equal(colo3_h(i), colo3_ref[i]));
-    }
-  }
-
-  SECTION("o3rat_matches_reference") {
-    for (int i = 0; i < photo_table.numcolo3; ++i) {
-      INFO("o3rat mismatch at i=" << i << ", computed=" << o3rat_h(i)
-           << ", expected=" << o3rat_ref[i]);
-      // printf("o3rat mismatch at i=%d, computed=%g, expected=%g\n",
-      //  i, o3rat_h(i), o3rat_ref[i]);     
-      REQUIRE(nearly_equal(o3rat_h(i), o3rat_ref[i]));
-    }
-  }
-
-  SECTION("del_o3rat_matches_reference") {
-    for (int i = 0; i < photo_table.numcolo3 - 1; ++i) {
-      INFO("del_o3rat mismatch at i=" << i << ", computed=" << del_o3rat_h(i)
-           << ", expected=" << del_o3rat_ref[i]);
-      // printf("del_o3rat mismatch at i=%d, computed=%g, expected=%g\n",
-      //  i, del_o3rat_h(i), del_o3rat_ref[i]);     
-      REQUIRE(nearly_equal(del_o3rat_h(i), del_o3rat_ref[i]));
-    }
-  }
-  
-  SECTION("prs_matches_reference") {
-    for (int i = 0; i < photo_table.np_xs; ++i) {
-      INFO("prs mismatch at i=" << i << ", computed=" << prs_h(i)
-           << ", expected=" << prs_ref[i]);
-      REQUIRE(nearly_equal(prs_h(i), prs_ref[i]));
-    }
-  }
-
-  SECTION("dprs_matches_reference") {
-    for (int i = 0; i < photo_table.np_xs - 1; ++i) {
-      INFO("dprs mismatch at i=" << i << ", computed=" << dprs_h(i)
-           << ", expected=" << dprs_ref[i]);
-      REQUIRE(nearly_equal(dprs_h(i), dprs_ref[i]));
-    }
-  }
-
-  SECTION("etfphot_matches_reference") {
-    for (int i = 0; i < photo_table.nw; ++i) {
-      INFO("etfphot mismatch at i=" << i << ", computed=" << etfphot_h(i)
-           << ", expected=" << etfphot_ref[i]);
-      // printf("etfphot mismatch at i=%d, computed=%g, expected=%g\n",
-      //  i, etfphot_h(i), etfphot_ref[i]);     
-      REQUIRE(nearly_equal(etfphot_h(i), etfphot_ref[i]));
-    }
-  }
-
-#if 1
-  // ---- rsf_tab(:,:,0,0,0) slice, unflattened from Fortran column-major
-  // order (k = i + j*nw, i.e. the wavelength index i varies fastest).
-  SECTION("rsf_tab_corner_slice_matches_reference") {
-    const int nw   = photo_table.nw;
-    const int nump = photo_table.nump;
-
-    // table_data.rsf_tab =
-      // View5D("photo_table_data.rsf", table_data.nw, table_data.nump,
-            //  table_data.numsza, table_data.numcolo3, table_data.numalb);
-
-    int count = 0;
-    for (int d2 = 0; d2 < nump; ++d2) {
-      // std::cout << "j=" << d2<< "\n"; 
-      for (int d1 = 0; d1 < nw; ++d1) {
-        const auto computed = rsf_tab_h(d1, d2, 0, 0, 0);;
-        const auto expected = rsf_tab_2d[count];
-        count++;
-        // std::cout << "k=" << d1
-        std::cout << "computed=" << computed
-              << ", expected=" << expected
-              << ", diff=" << (computed - expected)
-              << "\n";  
-  }
-}
-
-    // int mismatches = 0;
-    // for (std::size_t k = 0; k < rsf_tab_2d.size(); ++k) {
-    //   const int i = static_cast<int>(k % nw);   // wavelength index
-    //   const int j = static_cast<int>(k / nw);    // pressure index
-    //   const auto computed = rsf_tab_h(i, j, 0, 0, 0);
-    //   const auto expected = rsf_tab_2d[k];
-    //   if (!nearly_equal(computed, expected)) {
-    //     ++mismatches;
-    //     if (mismatches <= 10) {
-    //       INFO("rsf_tab mismatch at k=" << k << " (i=" << i << ", j=" << j
-    //            << "), computed=" << computed << ", expected=" << expected);
-    //     }
-    //   }
-    // }
-    // REQUIRE(mismatches == 0);
-  }
-#endif
   scorpio::finalize_subsystem();
 }

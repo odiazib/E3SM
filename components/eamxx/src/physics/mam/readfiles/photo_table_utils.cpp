@@ -6,6 +6,9 @@ namespace scream::impl {
 using mam4::mo_photo::phtcnt;
 
 using HostView1D    = mam4::DeviceType::view_1d<Real>::host_mirror_type;
+using LHostView5D   = mam4::DeviceType::lview<Real*****>::host_mirror_type;
+using HostView5D   = mam4::DeviceType::view<Real*****>::host_mirror_type;
+using HostView3D   = mam4::DeviceType::view<Real***>::host_mirror_type;
 using HostViewInt1D = mam4::DeviceType::view_1d<int>::host_mirror_type;
 
 //-------------------------------------------------------------------------
@@ -67,6 +70,8 @@ mam4::mo_photo::PhotoTableData read_photo_table(
       nw, nt, np_xs, numj, nump, numsza, numcolo3, numalb);
 
   // allocate host views for table data
+  HostView5D l_rsf_tab_h("rsf_tab_h",numalb,numcolo3,numsza,nump,nw);
+  HostView3D l_xsqy_h("xsqy_h",np_xs,nt,nw);
   auto rsf_tab_h = Kokkos::create_mirror_view(table.rsf_tab);
   auto xsqy_h    = Kokkos::create_mirror_view(table.xsqy);
   auto sza_h     = Kokkos::create_mirror_view(table.sza);
@@ -76,6 +81,7 @@ mam4::mo_photo::PhotoTableData read_photo_table(
   auto o3rat_h   = Kokkos::create_mirror_view(table.o3rat);
   // auto etfphot_h = Kokkos::create_mirror_view(table.etfphot);
   auto prs_h = Kokkos::create_mirror_view(table.prs);
+  
 
   // read file data into our host views
   scorpio::read_var(rsf_file, "pm", press_h.data());
@@ -84,17 +90,19 @@ mam4::mo_photo::PhotoTableData read_photo_table(
   scorpio::read_var(rsf_file, "colo3fact", o3rat_h.data());
   scorpio::read_var(rsf_file, "colo3", colo3_h.data());
   // it produces an error.
-  scorpio::read_var(rsf_file, "RSF", rsf_tab_h.data());
+  scorpio::read_var(rsf_file, "RSF", l_rsf_tab_h.data());
   scorpio::read_var(xs_long_file, "pressure", prs_h.data());
 
   // read xsqy data (using lng_indexer_h for the first index)
+  using policy_t3 = Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>;
   for(int m = 0; m < numj; ++m) {
-    auto xsqy_ndx_h = ekat::subview(xsqy_h, m);
-    std::cout << "Reading photolysis reaction " << rxt_names[m] << " from file " << xs_long_file << "\n";
-    scorpio::read_var(xs_long_file, rxt_names[m], xsqy_ndx_h.data());
+    scorpio::read_var(xs_long_file, rxt_names[m], l_xsqy_h.data());
+    Kokkos::parallel_for("xsqy_h", 
+    policy_t3({0, 0, 0}, {xsqy_h.extent(1), xsqy_h.extent(2), xsqy_h.extent(3)}),
+    [&](const int i, const int j, const int k) {
+        xsqy_h(m, i, j, k) = l_xsqy_h(k,j,i);
+  });
   }
-  
-
   // populate etfphot by rebinning solar data
   HostView1D wc_h("wc", nw), wlintv_h("wlintv", nw), we_h("we", nw + 1);
 
@@ -109,6 +117,23 @@ mam4::mo_photo::PhotoTableData read_photo_table(
   auto etfphot_data = populate_etfphot_from_e3sm_case();
   auto etfphot_h    = HostView1D((Real *)etfphot_data.data(), nw);
 
+  using policy_t = Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<4>>;
+  
+  Kokkos::parallel_for("scale_rsf_tab", 
+    policy_t({0, 0, 0, 0}, {rsf_tab_h.extent(1), rsf_tab_h.extent(2), rsf_tab_h.extent(3), rsf_tab_h.extent(4)}),
+    [&](const int l, const int i, const int j, const int k) {
+      for (int w = 0; w < nw; ++w) {
+        rsf_tab_h(w,l, i, j, k) = l_rsf_tab_h(k,j,i,l,w)*wlintv_h(w);
+      }
+  });
+
+  // for (int w = 0; w < nw; ++w) {
+  //   printf("rsf_tab_h(%d) %e \n", w, rsf_tab_h(w,0,0,0,0));
+  // }  
+
+  // for (int w = 0; w < nw; ++w) {
+  //   printf("wlintv_h(%d) %e \n", w, wlintv_h(w));
+  // }  
   scorpio::release_file(rsf_file);
   scorpio::release_file(xs_long_file);
 
