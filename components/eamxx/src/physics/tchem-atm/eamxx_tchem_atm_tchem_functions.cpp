@@ -19,6 +19,7 @@ mam4::mo_photo::PhotoTableData read_photo_table(
 namespace tchem {
 
 namespace {
+using HostView1D    = mam4::DeviceType::view_1d<Real>::host_mirror_type;
 
 void modify_photo_table_pht_alias_mult_1(mam4::mo_photo::PhotoTableData& table_data) {
   constexpr int phtcnt = mam4::mo_photo::phtcnt;
@@ -32,6 +33,30 @@ void modify_photo_table_pht_alias_mult_1(mam4::mo_photo::PhotoTableData& table_d
   pht_alias_mult_host(21) = 0.0004;
 
   Kokkos::deep_copy(table_data.pht_alias_mult_1, pht_alias_mult_host);
+}
+
+
+void modify_photo_table_etfphot_e3smv3(mam4::mo_photo::PhotoTableData& table_data) {
+    // We obtained these values from an e3sm simulations.
+  // We should only use this function on Host.
+  // Note: we need to review why this values are diferent in v2 and v3. 
+  std::vector<Real> etfphot_data = {
+       0.74420021091699609E+012,  0.85139533174377686E+012,  0.10185394901813281E+013,  0.11650271747566599E+013,  0.21278360656789287E+013,
+       0.32102726730546094E+013,  0.36991317530087681E+013,  0.43854806251147578E+013,  0.46490589507128838E+013,  0.60824175448989688E+013,  
+       0.45199732440082490E+013,  0.53096336119713838E+013,  0.46664963443549541E+013,  0.53889164471417969E+013,  0.44658315309513691E+013,  
+       0.68485884416423164E+013,  0.61529859957264326E+013,  0.60917831402007217E+013,  0.57317396272234600E+013,  0.76284401653460156E+013,  
+       0.13914324350439311E+014,  0.12044961828579564E+014,  0.28534210610292191E+014,  0.32105034161825109E+014,  0.24909006558383281E+014,  
+       0.27759500542452164E+014,  0.23169477753649539E+014,  0.36246132305883531E+014,  0.61726886085997141E+014,  0.77952511543866469E+014, 
+       0.76352487161941375E+014,  0.76176465839742719E+014,  0.94541477991598359E+014,  0.10114511241674064E+015,  0.10344934625369592E+015,  
+       0.10990672653798267E+015,  0.10881184173185175E+015,  0.11372916232957753E+015,  0.13482418576882047E+015,  0.15934045446957247E+015,  
+       0.14973282281420931E+015,  0.15173151415232916E+015,  0.15979204811229056E+015,  0.16966298325017691E+015,  0.18761242559642497E+015,  
+       0.16419159493501566E+015,  0.18360595355117650E+015,  0.21957036295763366E+015,  0.19601524134628047E+015,  0.22383825011292891E+015,  
+       0.18401883147059519E+015,  0.20100016593284484E+015,  0.20520669368043381E+015,  0.24319726136783316E+015,  0.35073290816277088E+015,  
+       0.34511498344381438E+015,  0.35743855330938131E+015,  0.36617357240278300E+015,  0.34963637002805588E+015,  0.35554865920003012E+015,  
+       0.42823524623318300E+015,  0.48406971868781850E+015,  0.49507991937358400E+015,  0.52693121969187562E+015,  0.52397774332888600E+015,  
+       0.50873156915913800E+015,  0.48775293858117969E+015};
+  auto etfphot_h    = HostView1D((Real *)etfphot_data.data(), table_data.nw);
+  Kokkos::deep_copy(table_data.etfphot, etfphot_h);
 }
 
 }  // namespace
@@ -104,6 +129,7 @@ mam4::mo_photo::PhotoTableData read_photo_table_uci(
       scream::impl::read_photo_table(rsf_file, xs_long_file, rxt_names_read,
                                      numj, lng_indexer_h);
   modify_photo_table_pht_alias_mult_1(table);
+  modify_photo_table_etfphot_e3smv3(table);
   return table;
 }
 
