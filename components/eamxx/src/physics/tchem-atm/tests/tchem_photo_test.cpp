@@ -485,15 +485,17 @@ TEST_CASE("tchem_photo_table_kernel_single_column_nlev72_regression",
       const auto computed = photo_h(0, d1, d2);
       const auto expected = photo_ref[count];
       count++;
-      if (d1==0)
+      // if (d1==0)
       {  // std::cout << "k=" << d1
         Real diff=computed - expected;       
-        Real rel = diff/expected;
+        Real rel = abs(diff)/expected;
+        if (rel > 1e-6){
         std::cout <<"ireac "<< d2 << " computed=" << computed
               << ", expected=" << expected
               << ", diff=" << (diff)
               << ", ref=" << (rel)
               << "\n";  
+        }
       }
 
     }
