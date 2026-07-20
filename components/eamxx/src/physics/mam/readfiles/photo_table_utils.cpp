@@ -94,7 +94,7 @@ mam4::mo_photo::PhotoTableData read_photo_table(
   scorpio::read_var(xs_long_file, "pressure", prs_h.data());
 
   // read xsqy data (using lng_indexer_h for the first index)
-  using policy_t3 = Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>;
+  using policy_t3 = Kokkos::MDRangePolicy<Kokkos::Rank<3>, Kokkos::DefaultHostExecutionSpace>;
   for(int m = 0; m < numj; ++m) {
     scorpio::read_var(xs_long_file, rxt_names[m], l_xsqy_h.data());
     Kokkos::parallel_for("xsqy_h", 
@@ -117,7 +117,7 @@ mam4::mo_photo::PhotoTableData read_photo_table(
   auto etfphot_data = populate_etfphot_from_e3sm_case();
   auto etfphot_h    = HostView1D((Real *)etfphot_data.data(), nw);
 
-  using policy_t = Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<4>>;
+  using policy_t = Kokkos::MDRangePolicy<Kokkos::Rank<4>, Kokkos::DefaultHostExecutionSpace>;
   
   Kokkos::parallel_for("scale_rsf_tab", 
     policy_t({0, 0, 0, 0}, {rsf_tab_h.extent(1), rsf_tab_h.extent(2), rsf_tab_h.extent(3), rsf_tab_h.extent(4)}),
