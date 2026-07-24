@@ -6,6 +6,20 @@ else()
   set(EXTERNALS_SOURCE_DIR "${PROJECT_SOURCE_DIR}/../../externals")
 endif()
 
+# yaml-cpp dependency for TChem-atm (bundled, must be added before Tines)
+if (NOT TARGET yaml-cpp)
+  set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "Disable yaml-cpp tests within E3SM" FORCE)
+  set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "Disable yaml-cpp tools within E3SM" FORCE)
+  set(YAML_CPP_BUILD_CONTRIB OFF CACHE BOOL "Disable yaml-cpp contrib within E3SM" FORCE)
+  set(YAML_CPP_INSTALL OFF CACHE BOOL "Disable yaml-cpp install exports within E3SM" FORCE)
+  add_subdirectory(${EXTERNALS_SOURCE_DIR}/tchem-atm/external/Tines/ext/yaml
+                   ${CMAKE_BINARY_DIR}/externals/tchem-atm/external/yaml-cpp)
+endif()
+# Tines checks for a target named "yaml"; create alias if needed
+if (TARGET yaml-cpp AND NOT TARGET yaml)
+  add_library(yaml ALIAS yaml-cpp)
+endif()
+
 # Tines dependency for TChem-atm
 if (NOT TARGET Tines::tines)
   set(TINES_ENABLE_TEST OFF CACHE BOOL "Disable Tines tests within E3SM" FORCE)
@@ -61,7 +75,7 @@ add_library(eamxx_tchem_atm
   eamxx_tchem_atm_tchem_functions.cpp)
 target_compile_definitions(eamxx_tchem_atm PUBLIC EAMXX_HAS_TCHEM_ATM)
 target_include_directories(eamxx_tchem_atm PRIVATE ${EXTERNALS_SOURCE_DIR}/tchem-atm/src/core)
-target_link_libraries(eamxx_tchem_atm PUBLIC tchem_atm mam4xx mam eamxx_physics_share csm_share scream_share)
+target_link_libraries(eamxx_tchem_atm PUBLIC tchem_atm yaml-cpp mam4xx mam eamxx_physics_share csm_share scream_share)
 
 if (TARGET eamxx_physics)
   # Add this library to eamxx_physics
