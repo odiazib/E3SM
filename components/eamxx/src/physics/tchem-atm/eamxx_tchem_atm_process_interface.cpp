@@ -115,6 +115,21 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   // Match MAM behavior: cache direct visible surface albedo view once.
   m_sfc_alb_dir_vis = get_field_in("sfc_alb_dir_vis").get_view<const Real *>();
 
+  // Cache column lat/lon from grid geometry (constant for the whole run).
+  // Convert from degrees to radians here so run_impl does no conversion per step.
+  {
+    const auto lat_deg = m_grid->get_geometry_data("lat").get_view<const Real *, Host>();
+    const auto lon_deg = m_grid->get_geometry_data("lon").get_view<const Real *, Host>();
+    Kokkos::View<Real *, Host> lat_rad("tchem_lat_rad", m_ncols);
+    Kokkos::View<Real *, Host> lon_rad("tchem_lon_rad", m_ncols);
+    for (int i = 0; i < m_ncols; ++i) {
+      lat_rad(i) = lat_deg(i) * M_PI / 180.0;
+      lon_rad(i) = lon_deg(i) * M_PI / 180.0;
+    }
+    m_col_latitudes_rad  = lat_rad;
+    m_col_longitudes_rad = lon_rad;
+  }
+
   m_n_active_vars      = m_kmcd.nSpec - m_kmcd.nConstSpec;
   m_state_vec_dim      = TChem::Impl::getStateVectorSize(m_kmcd.nSpec);
   m_species_names_host = m_kmd.sNames_.view_host();
@@ -429,14 +444,9 @@ void TChemATM::run_impl(const double dt) {
 
     // Match MAM behavior: compute zenith angle on host, then copy to device.
     auto zenith_host = Kokkos::create_mirror_view(m_zenith_angle);
-    const auto col_latitudes_host =
-      m_grid->get_geometry_data("lat").get_view<const Real *, Host>();
-    const auto col_longitudes_host =
-      m_grid->get_geometry_data("lon").get_view<const Real *, Host>();
     for (int i = 0; i < m_ncols; ++i) {
-      const Real lat = col_latitudes_host(i) * M_PI / 180.0;
-      const Real lon = col_longitudes_host(i) * M_PI / 180.0;
-      const Real cosz = shr_orb_cosz_c2f(calday, lat, lon, delta, dt);
+      const Real cosz = shr_orb_cosz_c2f(calday, m_col_latitudes_rad(i),
+                                          m_col_longitudes_rad(i), delta, dt);
       zenith_host(i) = acos(cosz);
     }
     Kokkos::deep_copy(m_zenith_angle, zenith_host);

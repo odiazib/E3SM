@@ -19,13 +19,14 @@ class TChemATM : public AtmosphereProcess {
   using implicit_euler_type  = TChem::AtmosphericChemistryE3SM_ImplicitEuler;
   using trbdf2_type          = TChem::AtmosphericChemistryE3SM;
 
-  using KT          = ekat::KokkosTypes<DefaultDevice>;
-  using view_1d     = typename KT::template view_1d<Real>;
-  using view_2d     = typename KT::template view_2d<Real>;
-  using view_3d     = typename KT::template view_3d<Real>;
-  using const_view_1d = typename KT::template view_1d<const Real>;
-  using view_1d_int = typename KT::template view_1d<int>;
-  using ThreadTeam  = Kokkos::TeamPolicy<KT::ExeSpace>::member_type;
+  using KT              = ekat::KokkosTypes<DefaultDevice>;
+  using view_1d         = typename KT::template view_1d<Real>;
+  using view_2d         = typename KT::template view_2d<Real>;
+  using view_3d         = typename KT::template view_3d<Real>;
+  using const_view_1d   = typename KT::template view_1d<const Real>;
+  using host_view_1d    = typename KT::template view_1d<const Real>::host_mirror_type;
+  using view_1d_int     = typename KT::template view_1d<int>;
+  using ThreadTeam      = Kokkos::TeamPolicy<KT::ExeSpace>::member_type;
   TChemATM(const ekat::Comm& comm, const ekat::ParameterList& params);
 
   std::string name() const override { return "tchem_atm"; }
@@ -106,6 +107,9 @@ class TChemATM : public AtmosphereProcess {
   view_1d      m_zenith_angle;
   // Surface albedo (shortwave, direct), cached like MAM interface.
   const_view_1d m_sfc_alb_dir_vis;
+  // Column latitudes and longitudes (radians) — grid geometry, constant throughout run.
+  host_view_1d  m_col_latitudes_rad;
+  host_view_1d  m_col_longitudes_rad;
   int          m_o3_species_index = -1;
   // Orbital parameters for photolysis (read once in initialize_impl).
   int    m_orbital_year = -9999;
