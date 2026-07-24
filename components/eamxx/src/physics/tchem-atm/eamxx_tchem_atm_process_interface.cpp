@@ -149,15 +149,20 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     EKAT_REQUIRE_MSG(false, "Error! Unknown solver_type '" + m_solver_type +
                      "'. Valid options: implicit_euler, trbdf2, explicit_euler.\n");
   }
-  m_max_time_iterations  = m_params.get<int>("max_time_iterations", 100);
-  m_jacobian_interval    = m_params.get<int>("jacobian_interval", 1);
-  m_dtmin_sub            = m_params.get<double>("dtmin_sub", 1e-1);
-  m_dtmax_sub            = m_params.get<double>("dtmax_sub", -1.0);
-  m_atol_newton          = m_params.get<double>("atol_newton", 1e-10);
-  m_rtol_newton          = m_params.get<double>("rtol_newton", 1e-6);
-  m_atol_time            = m_params.get<double>("atol_time", 1e-12);
-  m_rtol_time            = m_params.get<double>("rtol_time", 1e-4);
-  m_use_shared_workspace = m_params.get<bool>("use_shared_workspace", true);
+  m_max_time_iterations    = m_params.get<int>("max_time_iterations", 100);
+  m_max_newton_iterations  = m_params.get<int>("max_newton_iterations", 100);
+  m_jacobian_interval      = m_params.get<int>("jacobian_interval", 1);
+  m_dtmin_sub              = m_params.get<double>("dtmin_sub", 1e-1);
+  m_dtmax_sub              = m_params.get<double>("dtmax_sub", -1.0);
+  m_atol_newton            = m_params.get<double>("atol_newton", 1e-10);
+  m_rtol_newton            = m_params.get<double>("rtol_newton", 1e-6);
+  m_atol_time              = m_params.get<double>("atol_time", 1e-12);
+  m_rtol_time              = m_params.get<double>("rtol_time", 1e-4);
+  m_use_shared_workspace   = m_params.get<bool>("use_shared_workspace", true);
+  m_orbital_year           = m_params.get<int>("orbital_year", -9999);
+  m_orbital_eccen          = m_params.get<double>("orbital_eccentricity", -9999.0);
+  m_orbital_obliq          = m_params.get<double>("orbital_obliquity", -9999.0);
+  m_orbital_mvelp          = m_params.get<double>("orbital_mvelp", -9999.0);
   if (m_atm_logger) m_atm_logger->info("[TChemATM] solver_type = " + m_solver_type);
 
   // Allocate and populate tolerance/scaling views for implicit solvers.
@@ -406,10 +411,10 @@ void TChemATM::run_impl(const double dt) {
   // Compute photo table rates if we have a photo table
   if (m_have_photo_table) {
     // Compute orbital eccentricity factor used by MAM photo_table.
-    int orbital_year = m_params.get<int>("orbital_year", -9999);
-    double eccen = m_params.get<double>("orbital_eccentricity", -9999.0);
-    double obliq = m_params.get<double>("orbital_obliquity", -9999.0);
-    double mvelp = m_params.get<double>("orbital_mvelp", -9999.0);
+    int orbital_year = m_orbital_year;
+    double eccen = m_orbital_eccen;
+    double obliq = m_orbital_obliq;
+    double mvelp = m_orbital_mvelp;
     double obliqr, lambm0, mvelpp;
     if (eccen >= 0 && obliq >= 0 && mvelp >= 0) {
       orbital_year = shr_orb_undef_int_c2f;
@@ -527,7 +532,7 @@ void TChemATM::run_impl(const double dt) {
   tadv_default._dt   = dtmax_sub;
   tadv_default._dtmin = dtmin_sub;
   tadv_default._dtmax = dtmax_sub;
-  tadv_default._max_num_newton_iterations = m_params.get<int>("max_newton_iterations", 100);
+  tadv_default._max_num_newton_iterations = m_max_newton_iterations;
   tadv_default._num_time_iterations_per_interval = 100;
   tadv_default._jacobian_interval = m_jacobian_interval;
   Kokkos::deep_copy(m_tadv, tadv_default);
