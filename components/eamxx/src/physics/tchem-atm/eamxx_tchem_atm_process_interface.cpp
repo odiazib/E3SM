@@ -50,11 +50,11 @@ void TChemATM::create_requests() {
 
 
   // Build TChem kinetic model metadata from the configured chemistry file.
-  std::cout << "[TChemATM] KineticModelData\n";
+  if (m_atm_logger) m_atm_logger->debug("[TChemATM] KineticModelData");
   m_kmd = TChem::KineticModelData(chem_file);
-  std::cout << "[TChemATM] createNCAR_KineticModelConstData\n";
+  if (m_atm_logger) m_atm_logger->debug("[TChemATM] createNCAR_KineticModelConstData");
   m_kmcd = TChem::createNCAR_KineticModelConstData<tchem_device_type>(m_kmd);
-  std::cout << "[TChemATM] Done KineticModelData "<<m_kmd.nSpec_ <<"\n";
+  if (m_atm_logger) m_atm_logger->debug("[TChemATM] Done KineticModelData " + std::to_string(m_kmd.nSpec_));
 
   // Build m_species_mw indexed by TChem species order.
   // molecular_weights in the parameter list is a sublist mapping
@@ -75,7 +75,7 @@ void TChemATM::create_requests() {
     m_species_mw[i] = mw_list.get<double>(sname);
     // std::cout << "[TChemATM] Molecular weight for species "<< i <<" " << sname << " = " << m_species_mw[i] << " g/mol\n";
   }
-  std::cout << "[TChemATM] Done loading molecular weights\n";
+  if (m_atm_logger) m_atm_logger->debug("[TChemATM] Done loading molecular weights");
   m_tchem_ready = true;
    // std::cout << "[TChemATM] Done m_species_mw\n";
 
@@ -97,7 +97,7 @@ void TChemATM::create_requests() {
     const std::string sname(&species_names_host(m_kmcd.M_index + 6 + j, 0));
     add_field<Updated>(sname, scalar3d_mid, q_unit, grid_name);
   }
-  std::cout << "[TChemATM] Done create_requests\n";
+  if (m_atm_logger) m_atm_logger->debug("[TChemATM] Done create_requests");
 }
 
 void TChemATM::initialize_impl(const RunType /* run_type */) {
