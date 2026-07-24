@@ -66,6 +66,7 @@ class TChemATM : public AtmosphereProcess {
   SolverType   m_solver_enum = SolverType::ExplicitEuler;
   std::string  m_solver_type = "explicit_euler"; // kept for logging only
   int m_max_time_iterations = 1000;
+  int m_max_newton_iterations = 100;
   int m_jacobian_interval   = 1;
   Real m_dtmin_sub   = 1e-4;
   Real m_dtmax_sub   = -1.0; // negative → use physics dt
@@ -104,7 +105,11 @@ class TChemATM : public AtmosphereProcess {
   // Surface albedo (shortwave, direct), cached like MAM interface.
   const_view_1d m_sfc_alb_dir_vis;
   int          m_o3_species_index = -1;
-  // Persistent sample/index views (allocate once in initialize, reuse in run)
+  // Orbital parameters for photolysis (read once in initialize_impl).
+  int    m_orbital_year = -9999;
+  double m_orbital_eccen = -9999.0;
+  double m_orbital_obliq = -9999.0;
+  double m_orbital_mvelp = -9999.0;
   view_1d_int  m_offsets;
   view_1d_int  m_sample_icol;
   view_1d_int  m_sample_ilev;
