@@ -62,7 +62,9 @@ class TChemATM : public AtmosphereProcess {
   TChem::ordinal_type m_state_vec_dim = 0;
   bool m_tchem_ready = false;
   // Solver selection and time-stepping parameters (read from namelist).
-  std::string m_solver_type = "explicit_euler";
+  enum class SolverType { ExplicitEuler, ImplicitEuler, TRBDF2 };
+  SolverType   m_solver_enum = SolverType::ExplicitEuler;
+  std::string  m_solver_type = "explicit_euler"; // kept for logging only
   int m_max_time_iterations = 1000;
   int m_jacobian_interval   = 1;
   Real m_dtmin_sub   = 1e-4;

@@ -139,6 +139,16 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   m_sample_ilev = view_1d_int("tchem_sample_ilev", m_nbatch);
   // Read solver/time-stepping parameters from the namelist.
   m_solver_type          = m_params.get<std::string>("solver_type", "implicit_euler");
+  if (m_solver_type == "implicit_euler") {
+    m_solver_enum = SolverType::ImplicitEuler;
+  } else if (m_solver_type == "trbdf2") {
+    m_solver_enum = SolverType::TRBDF2;
+  } else if (m_solver_type == "explicit_euler") {
+    m_solver_enum = SolverType::ExplicitEuler;
+  } else {
+    EKAT_REQUIRE_MSG(false, "Error! Unknown solver_type '" + m_solver_type +
+                     "'. Valid options: implicit_euler, trbdf2, explicit_euler.\n");
+  }
   m_max_time_iterations  = m_params.get<int>("max_time_iterations", 100);
   m_jacobian_interval    = m_params.get<int>("jacobian_interval", 1);
   m_dtmin_sub            = m_params.get<double>("dtmin_sub", 1e-1);
@@ -151,7 +161,7 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   if (m_atm_logger) m_atm_logger->info("[TChemATM] solver_type = " + m_solver_type);
 
   // Allocate and populate tolerance/scaling views for implicit solvers.
-  if (m_solver_type == "implicit_euler" || m_solver_type == "trbdf2") {
+  if (m_solver_enum == SolverType::ImplicitEuler || m_solver_enum == SolverType::TRBDF2) {
     using problem_type =
         TChem::Impl::AtmosphericChemistryE3SM_Problem<TChem::real_type,
                                                       tchem_device_type>;
@@ -179,9 +189,7 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
 
   if (!m_use_shared_workspace) {
     TChem::ordinal_type per_team_extent = 0;
-    if (m_solver_type == "implicit_euler") {
-      per_team_extent = TChem::AtmosphericChemistryE3SM::getWorkSpaceSize(m_kmcd);
-    } else if (m_solver_type == "trbdf2") {
+    if (m_solver_enum == SolverType::ImplicitEuler || m_solver_enum == SolverType::TRBDF2) {
       per_team_extent = TChem::AtmosphericChemistryE3SM::getWorkSpaceSize(m_kmcd);
     } else {
       per_team_extent = TChem::AtmosphericChemistryE3SM_ExplicitEuler::getWorkSpaceSize(m_kmcd);
@@ -376,13 +384,11 @@ void TChemATM::run_impl(const double dt) {
  
   policy_type policy(TChem::exec_space(), m_nsamples, Kokkos::AUTO());
   ordinal_type per_team_extent = 0;
-   if (m_solver_type == "implicit_euler") {
-      per_team_extent = TChem::AtmosphericChemistryE3SM::getWorkSpaceSize(m_kmcd);
-    } else if (m_solver_type == "trbdf2") {
-      per_team_extent = TChem::AtmosphericChemistryE3SM::getWorkSpaceSize(m_kmcd);
-    } else {
-      per_team_extent = TChem::AtmosphericChemistryE3SM_ExplicitEuler::getWorkSpaceSize(m_kmcd);
-    }
+  if (m_solver_enum == SolverType::ImplicitEuler || m_solver_enum == SolverType::TRBDF2) {
+    per_team_extent = TChem::AtmosphericChemistryE3SM::getWorkSpaceSize(m_kmcd);
+  } else {
+    per_team_extent = TChem::AtmosphericChemistryE3SM_ExplicitEuler::getWorkSpaceSize(m_kmcd);
+  }
   //TODO: add the workspace for implicit_euler
   // use the use_shared_workspace option to turn on and offf
   if (m_use_shared_workspace) {
@@ -544,17 +550,7 @@ void TChemATM::run_impl(const double dt) {
     tchem::pack_wet_mmr_into_state(state, q_tracer, qv, m_sample_icol, m_sample_ilev,
                 m_nsamples, ivar + 3, m_species_mw[ivar],
                 "tchem_init_state_tracer");
-    // if (ivar == 0) {
-    //   TChem::exec_space().fence();
-    //   auto state_host = Kokkos::create_mirror_view_and_copy(
-    //       Kokkos::HostSpace(), state);
-    //   std::cout << "[TChemATM] O3 VMR col 0 (before TChem):";
-    //   for (int ilev = 0; ilev < state_host.extent(0); ++ilev)
-    //     std::cout << " " << state_host(ilev, ivar + 3);
-    //   std::cout << "\n";
-    // }
   }
-  // std::cout << "[TChemATM] Done fill_state_column_from_wet_mmr_field\n";
  #if 1
      // conversion factor for Pascals to dyne/cm^2
   constexpr Real Pa_xfac = 10.0;
@@ -606,11 +602,11 @@ void TChemATM::run_impl(const double dt) {
   for (int iter = 0; iter < m_max_time_iterations && tsum <= dt * 0.9999;
        ++iter) {
 
-    if (m_solver_type == "implicit_euler") {
+    if (m_solver_enum == SolverType::ImplicitEuler) {
       implicit_euler_type::runDeviceBatch(
           policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
           m_external_sources, t_view, dt_view, m_state, m_workspace, m_kmcd);
-    } else if (m_solver_type == "trbdf2") {
+    } else if (m_solver_enum == SolverType::TRBDF2) {
       trbdf2_type::runDeviceBatch(
           policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
           m_external_sources, t_view, dt_view, m_state, m_kmcd);
@@ -633,21 +629,6 @@ void TChemATM::run_impl(const double dt) {
     tsum /= m_nsamples;
   }
 #endif
-  // Print O3 VMR for column 0 after the TChem run.
-  // for (int ivar = 0; ivar < m_kmcd.nSpec - m_kmcd.nConstSpec; ++ivar) {
-  //   const std::string sname(&species_names_host(ivar, 0));
-  //   if (ivar == 0) {
-  //     TChem::exec_space().fence();
-  //     auto m_state_host = Kokkos::create_mirror_view_and_copy(
-  //         Kokkos::HostSpace(), m_state);
-  //     std::cout << "[TChemATM] O3 VMR col 0 (after TChem):";
-  //     for (int ilev = 0; ilev < nlevs; ++ilev)
-  //       std::cout << " " << m_state_host(ilev, ivar + 3);
-  //     std::cout << "\n";
-  //     break;
-  //   }
-  // }
-
   // After the TChem run, convert dry-vmr state back to wet-mmr tracer fields.
   for (int ivar = 0; ivar < m_kmcd.nSpec - m_kmcd.nConstSpec; ++ivar) {
     const auto& tracer_name = std::string(&species_names_host(ivar, 0));
