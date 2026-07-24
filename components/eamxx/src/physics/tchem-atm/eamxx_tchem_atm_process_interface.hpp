@@ -47,6 +47,8 @@ class TChemATM : public AtmosphereProcess {
   std::shared_ptr<const AbstractGrid> m_grid;
   TChem::KineticModelData m_kmd;
   TChem::KineticModelNCAR_ConstData<tchem_device_type> m_kmcd;
+  // Host mirror of species name strings — cached once in initialize_impl.
+  decltype(std::declval<TChem::KineticModelData>().sNames_.view_host()) m_species_names_host;
   explicit_euler_type::real_type_2d_view_type m_state;
   explicit_euler_type::real_type_2d_view_type m_photo_rates;
   explicit_euler_type::real_type_2d_view_type m_external_sources;

@@ -115,8 +115,9 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   // Match MAM behavior: cache direct visible surface albedo view once.
   m_sfc_alb_dir_vis = get_field_in("sfc_alb_dir_vis").get_view<const Real *>();
 
-  m_n_active_vars = m_kmcd.nSpec - m_kmcd.nConstSpec;
-  m_state_vec_dim = TChem::Impl::getStateVectorSize(m_kmcd.nSpec);
+  m_n_active_vars      = m_kmcd.nSpec - m_kmcd.nConstSpec;
+  m_state_vec_dim      = TChem::Impl::getStateVectorSize(m_kmcd.nSpec);
+  m_species_names_host = m_kmd.sNames_.view_host();
 
   m_state = explicit_euler_type::real_type_2d_view_type("tchem_state", m_nbatch, m_state_vec_dim);
   const int m_photo_reactions = mam4::mo_photo::phtcnt;
@@ -215,9 +216,8 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     m_o3col_dens = view_2d("tchem_o3col_dens", m_ncols, m_nlevs);
     // find O3 species index in kinetic model names (if present)
     m_o3_species_index = -1;
-    auto species_names_host = m_kmd.sNames_.view_host();
     for (int i = 0; i < m_kmd.nSpec_; ++i) {
-      const std::string sname(&species_names_host(i, 0));
+      const std::string sname(&m_species_names_host(i, 0));
       if (sname == "O3") { m_o3_species_index = i; break; }
     }
     m_have_photo_table = true;
@@ -452,8 +452,7 @@ void TChemATM::run_impl(const double dt) {
     view_2d o3_field;
     bool have_o3_field = false;
     if (m_o3_species_index >= 0) {
-      const auto species_names_host = m_kmd.sNames_.view_host();
-      const std::string o3_name(&species_names_host(m_o3_species_index, 0));
+      const std::string o3_name(&m_species_names_host(m_o3_species_index, 0));
       o3_field = get_field_out(o3_name).get_view<Real **>();
       have_o3_field = true;
     }
@@ -546,9 +545,8 @@ void TChemATM::run_impl(const double dt) {
                   "tchem_init_state_t");
 
   // std::cout << "[TChemATM] Done fill_state_column_from_field\n";
-  const auto species_names_host = m_kmd.sNames_.view_host();
-  for (int ivar = 0; ivar < m_kmd.nSpec_-m_num_invariants; ++ivar) {
-    const auto& tracer_name = std::string(&species_names_host(ivar, 0));
+  for (int ivar = 0; ivar < m_n_active_vars; ++ivar) {
+    const auto& tracer_name = std::string(&m_species_names_host(ivar, 0));
     // std::cout << "[TChemATM] Filling state column for tracer " << tracer_name << "\n";
     const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
     // Use sampling-aware pack to only pack selected samples (m_sample_icol/ilev)
@@ -589,7 +587,7 @@ void TChemATM::run_impl(const double dt) {
 
 
   for (int j = 0; j < num_tracer_cnst; ++j) {
-    const auto& tracer_name = std::string(&species_names_host(m_kmcd.M_index + 6 + j, 0));
+    const auto& tracer_name = std::string(&m_species_names_host(m_kmcd.M_index + 6 + j, 0));
     // std::cout << "[TChemATM] Filling state column for invariant tracer " << tracer_name << "\n";
     const auto& q_tracer = get_field_out(tracer_name).get_view<Real **>();
     const int state_col_j = m_state_col + 6 + j;
@@ -635,8 +633,8 @@ void TChemATM::run_impl(const double dt) {
   }
 #endif
   // After the TChem run, convert dry-vmr state back to wet-mmr tracer fields.
-  for (int ivar = 0; ivar < m_kmcd.nSpec - m_kmcd.nConstSpec; ++ivar) {
-    const auto& tracer_name = std::string(&species_names_host(ivar, 0));
+  for (int ivar = 0; ivar < m_n_active_vars; ++ivar) {
+    const auto& tracer_name = std::string(&m_species_names_host(ivar, 0));
     const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
     // Unpack only sampled entries from TChem state back into wet-mmr tracer field
     tchem::unpack_wet_mmr_from_state(q_tracer, state, qv, m_sample_icol, m_sample_ilev,
