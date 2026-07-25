@@ -23,7 +23,6 @@ void TChemATM::create_requests() {
   using namespace ekat::units;
   constexpr auto q_unit = kg / kg;
   using namespace ShortFieldTagsNames;
-  // std::cout << "[TChemATM] create_requests\n";
 
   m_grid = m_grids_manager->get_grid("physics");
   EKAT_REQUIRE_MSG(m_grid != nullptr,
@@ -73,11 +72,9 @@ void TChemATM::create_requests() {
                      "Error! Molecular weight not found for species '" +
                      sname + "' in 'molecular_weights' sublist.\n");
     m_species_mw[i] = mw_list.get<double>(sname);
-    // std::cout << "[TChemATM] Molecular weight for species "<< i <<" " << sname << " = " << m_species_mw[i] << " g/mol\n";
   }
   if (m_atm_logger) m_atm_logger->debug("[TChemATM] Done loading molecular weights");
   m_tchem_ready = true;
-   // std::cout << "[TChemATM] Done m_species_mw\n";
 
   // Read sampling configuration: sample above tropopause (true) or below (false)
   m_run_troposphere = m_params.get<bool>("run_troposphere", true);
@@ -86,7 +83,6 @@ void TChemATM::create_requests() {
   //FIXME: invariants are not tracers.
   for (int i = 0; i < m_kmd.nSpec_ - m_num_invariants; ++i) {
     const std::string sname(&species_names_host(i, 0));
-    // std::cout << "[TChemATM] species[" << i << "] = " << sname << "\n";
     add_tracer<Updated>(sname, m_grid, q_unit);
   }
   if (m_atm_logger) m_atm_logger->info("[TChemATM] Number of tracers added: " + std::to_string(m_kmd.nSpec_ - m_num_invariants));
@@ -99,7 +95,6 @@ void TChemATM::create_requests() {
 }
 
 void TChemATM::initialize_impl(const RunType /* run_type */) {
-  // std::cout << "[TChemATM] initialize_impl\n";
   EKAT_REQUIRE_MSG(m_tchem_ready,
                    "Error! TChemATM::initialize_impl called before TChem model initialization.\n");
 
@@ -255,7 +250,6 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   }
 
   set_exo_coldens_reader();
-  // std::cout << "[TChemATM] Done initialize_impl\n";
 }
 
 int TChemATM::get_len_temporary_views() {
@@ -316,9 +310,7 @@ void TChemATM::set_exo_coldens_reader() {
 }
 
 void TChemATM::run_impl(const double dt) {
-  
 
-  // std::cout << "[TChemATM] run_impl with dt = " << dt << "\n";
   EKAT_ASSERT_MSG(m_tchem_ready,
                    "Error! TChemATM::run_impl called before TChem model initialization.\n");
  
@@ -556,15 +548,12 @@ void TChemATM::run_impl(const double dt) {
   tadv_default._jacobian_interval = m_jacobian_interval;
   Kokkos::deep_copy(m_tadv, tadv_default);
 
-  // std::cout << "[TChemATM] Starting TChem run\n";
-
   // Pack pressure and temperature into the state for all selected samples
   tchem::pack_into_state(state, p_mid, m_sample_icol, m_sample_ilev, m_nsamples, 1,
                   "tchem_init_state_p");
   tchem::pack_into_state(state, t_mid, m_sample_icol, m_sample_ilev, m_nsamples, 2,
                   "tchem_init_state_t");
 
-  // std::cout << "[TChemATM] Done fill_state_column_from_field\n";
   for (int ivar = 0; ivar < m_n_active_vars; ++ivar) {
     const auto& q_tracer = m_tracer_views[ivar];
     // Use sampling-aware pack to only pack selected samples (m_sample_icol/ilev)
