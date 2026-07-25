@@ -92,12 +92,10 @@ void TChemATM::create_requests() {
   if (m_atm_logger) m_atm_logger->info("[TChemATM] Number of tracers added: " + std::to_string(m_kmd.nSpec_ - m_num_invariants));
     // Add prescribed constant tracer fields (oxidants).
   // M, N2, O2, H2O, H2, CH4 are computed from T and P at runtime, not registered as fields.
-  constexpr int num_tracer_cnst = 3;
-  for (int j = 0; j < num_tracer_cnst; ++j) {
+  for (int j = 0; j < s_num_cnst_tracers; ++j) {
     const std::string sname(&species_names_host(m_kmcd.M_index + 6 + j, 0));
     add_field<Updated>(sname, scalar3d_mid, q_unit, grid_name);
   }
-  if (m_atm_logger) m_atm_logger->debug("[TChemATM] Done create_requests");
 }
 
 void TChemATM::initialize_impl(const RunType /* run_type */) {
@@ -135,14 +133,13 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   m_species_names_host = m_kmd.sNames_.view_host();
 
   // Cache tracer field views to avoid per-timestep string map lookups.
-  constexpr int num_tracer_cnst = 3;
   m_tracer_views.resize(m_n_active_vars);
   for (int i = 0; i < m_n_active_vars; ++i) {
     const std::string sname(&m_species_names_host(i, 0));
     m_tracer_views[i] = get_field_out(sname).get_view<Real **>();
   }
-  m_cnst_tracer_views.resize(num_tracer_cnst);
-  for (int j = 0; j < num_tracer_cnst; ++j) {
+  m_cnst_tracer_views.resize(s_num_cnst_tracers);
+  for (int j = 0; j < s_num_cnst_tracers; ++j) {
     const std::string sname(&m_species_names_host(m_kmcd.M_index + 6 + j, 0));
     m_cnst_tracer_views[j] = get_field_out(sname).get_view<Real **>();
   }
@@ -484,7 +481,6 @@ void TChemATM::run_impl(const double dt) {
 
     // ozone column buffer (preallocated in initialize_impl)
     Kokkos::deep_copy(m_o3col_dens, 0.0);
-#if 1
     view_2d o3_exo_col;
     const bool have_o3_exo_col = m_have_exo_coldens && !m_exo_coldens_fields.empty();
     if (have_o3_exo_col) {
@@ -540,7 +536,6 @@ void TChemATM::run_impl(const double dt) {
         m_photo_rates, m_photo_3d, m_sample_icol, m_sample_ilev, m_nsamples,
         nphoto_reactions, "tchem_photo_copy");
     Kokkos::fence();
-#endif    
   }
 
 
@@ -577,8 +572,7 @@ void TChemATM::run_impl(const double dt) {
                 m_nsamples, ivar + 3, m_species_mw[ivar],
                 "tchem_init_state_tracer");
   }
- #if 1
-     // conversion factor for Pascals to dyne/cm^2
+  // conversion factor for Pascals to dyne/cm^2
   constexpr Real Pa_xfac = 10.0;
   // presumably, the boltzmann constant, in CGS units
   constexpr Real boltz_cgs = 0.13806500000000001E-015;
@@ -587,7 +581,6 @@ void TChemATM::run_impl(const double dt) {
 
   // invariant_col: first column index in state[] where invariants are stored
   const int invariant_col = m_kmcd.M_index + 3;
-  constexpr int num_tracer_cnst = 3;
   Kokkos::parallel_for(
       "tchem_compute_M", Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
       KOKKOS_LAMBDA(const int isample) {
@@ -610,7 +603,7 @@ void TChemATM::run_impl(const double dt) {
       });
 
 
-  for (int j = 0; j < num_tracer_cnst; ++j) {
+  for (int j = 0; j < s_num_cnst_tracers; ++j) {
     const int state_col_j = invariant_col + 6 + j;
     tchem::pack_into_state(state, m_cnst_tracer_views[j], m_sample_icol, m_sample_ilev,
                            m_nsamples, state_col_j,
@@ -622,7 +615,6 @@ void TChemATM::run_impl(const double dt) {
   const auto& tadv        = m_tadv;
   const auto& t_view      = m_t;
   const auto& dt_view     = m_dt_view;
-#if 1
   for (int iter = 0; iter < m_max_time_iterations && tsum <= dt * 0.9999;
        ++iter) {
 
@@ -652,28 +644,25 @@ void TChemATM::run_impl(const double dt) {
     Kokkos::fence();
     tsum /= m_nsamples;
   }
-#endif
   // After the TChem run, convert dry-vmr state back to wet-mmr tracer fields.
   for (int ivar = 0; ivar < m_n_active_vars; ++ivar) {
     // Unpack only sampled entries from TChem state back into wet-mmr tracer field
     tchem::unpack_wet_mmr_from_state(m_tracer_views[ivar], state, qv, m_sample_icol,
                   m_sample_ilev, m_nsamples, ivar + 3, m_species_mw[ivar],
                   "tchem_copy_back_state_tracer");
-  } 
+  }
 
   //TODO:
-  // run only w TChem-atm traces it looks like I also need mam4xx tracers. 
-  // Run tropopause 
-  // Run stratoshere
-  // get num_tracer_cnst
+  // run only w TChem-atm traces it looks like I also need mam4xx tracers.
+  // Run tropopause
+  // Run stratosphere
   // make a single test for case w aerosols.
   // get photolysis rates.
   // get external sources.
   // Future:
   // modify TChem-atm functions signature to pass tem and pressure
-  // connect to aerosols. 
+  // connect to aerosols.
   // use Analitycal Jacobian.
-#endif  
 }
 
 }  // namespace scream
