@@ -125,9 +125,9 @@ class TChemATM : public AtmosphereProcess {
   view_1d_int  m_sample_icol;
   view_1d_int  m_sample_ilev;
   int          m_nsamples = 0;
-  // When true, sample levels above the tropopause; when false, sample below.
-  // Controlled by the 'm_run_troposhere' parameter (default: true).
-  bool m_run_troposhere = true;
+  // When true, run chemistry in the troposphere; when false, run in the stratosphere.
+  // Controlled by the 'run_troposphere' namelist parameter (default: true).
+  bool m_run_troposphere = true;
 };
 
 }  // namespace scream
