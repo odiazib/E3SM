@@ -319,7 +319,7 @@ void TChemATM::run_impl(const double dt) {
   
 
   // std::cout << "[TChemATM] run_impl with dt = " << dt << "\n";
-  EKAT_REQUIRE_MSG(m_tchem_ready,
+  EKAT_ASSERT_MSG(m_tchem_ready,
                    "Error! TChemATM::run_impl called before TChem model initialization.\n");
  
   using ordinal_type = TChem::ordinal_type;
@@ -436,9 +436,9 @@ void TChemATM::run_impl(const double dt) {
   tchem::compute_sample_indices(ntropopause, m_offsets, ncol, nlev, m_sample_icol,
                                 m_sample_ilev, above);
 
-  Kokkos::deep_copy(m_photo_rates, 0.0);
   // Compute photo table rates if we have a photo table
   if (m_have_photo_table) {
+    Kokkos::deep_copy(m_photo_rates, 0.0);
     // Compute orbital eccentricity factor used by MAM photo_table.
     int orbital_year = m_orbital_year;
     double eccen = m_orbital_eccen;
