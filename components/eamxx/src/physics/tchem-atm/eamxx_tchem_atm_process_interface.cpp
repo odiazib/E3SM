@@ -80,8 +80,8 @@ void TChemATM::create_requests() {
    // std::cout << "[TChemATM] Done m_species_mw\n";
 
   // Read sampling configuration: sample above tropopause (true) or below (false)
-  m_run_troposhere = m_params.get<bool>("m_run_troposhere", true);
-  if (m_atm_logger) m_atm_logger->info("[TChemATM] m_run_troposhere = " + std::to_string(m_run_troposhere));
+  m_run_troposphere = m_params.get<bool>("run_troposphere", true);
+  if (m_atm_logger) m_atm_logger->info("[TChemATM] run_troposphere = " + std::to_string(m_run_troposphere));
 
   //FIXME: invariants are not tracers.
   for (int i = 0; i < m_kmd.nSpec_ - m_num_invariants; ++i) {
@@ -411,9 +411,9 @@ void TChemATM::run_impl(const double dt) {
   const int ncol = ncols;
   const int nlev = nlevs;
 
-  // Choose sampling option: sample above or below tropopause according to
-  // the 'm_run_troposhere' parameter (true = above, false = below).
-  const bool above = m_run_troposhere;
+  // When true, run chemistry in the troposphere (levels >= tropopause index);
+  // when false, run in the stratosphere (levels < tropopause index).
+  const bool above = m_run_troposphere;
   m_nsamples = tchem::compute_nsamples(ntropopause, ncol, nlev, above);
   if (m_atm_logger) m_atm_logger->info("[TChemATM] m_nsamples = " + std::to_string(m_nsamples));
 
