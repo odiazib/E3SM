@@ -60,6 +60,8 @@ class TChemATM : public AtmosphereProcess {
   int m_ncols = 0;
   int m_nlevs = 0;
   int m_nbatch = 0;
+  // Number of prescribed constant tracers (oxidants: 3 species after M/N2/O2/H2O/H2/CH4).
+  static constexpr int s_num_cnst_tracers = 3;
   int m_num_invariants=0;
   TChem::ordinal_type m_n_active_vars = 0;
   TChem::ordinal_type m_state_vec_dim = 0;
