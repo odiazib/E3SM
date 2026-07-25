@@ -585,32 +585,33 @@ void TChemATM::run_impl(const double dt) {
   // Compute invariants:
   // step 1: M [molecules/cm^3] = Pa_xfac * P [Pa] / (boltz_cgs * T [K])
 
-  const int m_state_col = m_kmcd.M_index + 3;
+  // invariant_col: first column index in state[] where invariants are stored
+  const int invariant_col = m_kmcd.M_index + 3;
   constexpr int num_tracer_cnst = 3;
   Kokkos::parallel_for(
       "tchem_compute_M", Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
       KOKKOS_LAMBDA(const int isample) {
         const int icol = m_sample_icol(isample);
         const int ilev = m_sample_ilev(isample);
-        const Real m_value =
+        const Real M_value =
             Pa_xfac * p_mid(icol, ilev) / (boltz_cgs * t_mid(icol, ilev));
-        state(isample, m_state_col) = m_value;
+        state(isample, invariant_col) = M_value;
         // N2 = 0.79 * M
-        state(isample, m_state_col + 1) = 0.79;  // * m_value;
+        state(isample, invariant_col + 1) = 0.79;  // * M_value;
         // O2 = 0.21 * M
-        state(isample, m_state_col + 2) = 0.21;  // * m_value;
+        state(isample, invariant_col + 2) = 0.21;  // * M_value;
         // H2O = qv * M / (1 + qv)
-        state(isample, m_state_col + 3) =
-            qv(icol, ilev) / (1.0 + qv(icol, ilev));  // m_value;
+        state(isample, invariant_col + 3) =
+            qv(icol, ilev) / (1.0 + qv(icol, ilev));  // M_value;
         // H2 = 5.5e-7 * M
-        state(isample, m_state_col + 4) = 5.5e-7;  // * m_value;
-        // CH4 =0;
-        state(isample, m_state_col + 5) = 0.0;
+        state(isample, invariant_col + 4) = 5.5e-7;  // * M_value;
+        // CH4 = 0
+        state(isample, invariant_col + 5) = 0.0;
       });
 
 
   for (int j = 0; j < num_tracer_cnst; ++j) {
-    const int state_col_j = m_state_col + 6 + j;
+    const int state_col_j = invariant_col + 6 + j;
     tchem::pack_into_state(state, m_cnst_tracer_views[j], m_sample_icol, m_sample_ilev,
                            m_nsamples, state_col_j,
                            "tchem_compute_cnst_tracer");
