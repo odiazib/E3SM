@@ -24,7 +24,7 @@ class TChemATM : public AtmosphereProcess {
   using view_2d         = typename KT::template view_2d<Real>;
   using view_3d         = typename KT::template view_3d<Real>;
   using const_view_1d   = typename KT::template view_1d<const Real>;
-  using host_view_1d    = typename KT::template view_1d<const Real>::host_mirror_type;
+  using host_view_1d    = Kokkos::View<Real*, Kokkos::HostSpace>;
   using view_1d_int     = typename KT::template view_1d<int>;
   using ThreadTeam      = Kokkos::TeamPolicy<KT::ExeSpace>::member_type;
   TChemATM(const ekat::Comm& comm, const ekat::ParameterList& params);
