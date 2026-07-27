@@ -113,14 +113,12 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   {
     const auto lat_deg = m_grid->get_geometry_data("lat").get_view<const Real *, Host>();
     const auto lon_deg = m_grid->get_geometry_data("lon").get_view<const Real *, Host>();
-    Kokkos::View<Real *, Host> lat_rad("tchem_lat_rad", m_ncols);
-    Kokkos::View<Real *, Host> lon_rad("tchem_lon_rad", m_ncols);
+    m_col_latitudes_rad  = host_view_1d("tchem_lat_rad",  m_ncols);
+    m_col_longitudes_rad = host_view_1d("tchem_lon_rad", m_ncols);
     for (int i = 0; i < m_ncols; ++i) {
-      lat_rad(i) = lat_deg(i) * M_PI / 180.0;
-      lon_rad(i) = lon_deg(i) * M_PI / 180.0;
+      m_col_latitudes_rad(i)  = lat_deg(i) * M_PI / 180.0;
+      m_col_longitudes_rad(i) = lon_deg(i) * M_PI / 180.0;
     }
-    m_col_latitudes_rad  = lat_rad;
-    m_col_longitudes_rad = lon_rad;
   }
 
   m_n_active_vars      = m_kmcd.nSpec - m_kmcd.nConstSpec;
