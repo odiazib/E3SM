@@ -118,11 +118,6 @@ class TChemATM : public AtmosphereProcess {
   double m_orbital_eccen = -9999.0;
   double m_orbital_obliq = -9999.0;
   double m_orbital_mvelp = -9999.0;
-  // Cached field views for tracers — populated once in initialize_impl.
-  // Avoids repeated get_field_out string-map lookups every timestep.
-  std::vector<view_2d> m_tracer_views;       // active species [m_n_active_vars]
-  std::vector<view_2d> m_cnst_tracer_views;  // constant tracers [num_tracer_cnst]
-  view_2d              m_o3_field_view;      // O3 field (valid when m_o3_species_index >= 0)
   view_1d_int  m_offsets;
   view_1d_int  m_sample_icol;
   view_1d_int  m_sample_ilev;
