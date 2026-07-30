@@ -125,21 +125,6 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   m_state_vec_dim      = TChem::Impl::getStateVectorSize(m_kmcd.nSpec);
   m_species_names_host = m_kmd.sNames_.view_host();
 
-  // Cache tracer field views to avoid per-timestep string map lookups.
-  m_tracer_views.resize(m_n_active_vars);
-  for (int i = 0; i < m_n_active_vars; ++i) {
-    const std::string sname(&m_species_names_host(i, 0));
-    m_tracer_views[i] = get_field_out(sname).get_view<Real **>();
-  }
-  m_cnst_tracer_views.resize(s_num_cnst_tracers);
-  for (int j = 0; j < s_num_cnst_tracers; ++j) {
-    const std::string sname(&m_species_names_host(m_kmcd.M_index + 6 + j, 0));
-    m_cnst_tracer_views[j] = get_field_out(sname).get_view<Real **>();
-  }
-  if (m_o3_species_index >= 0) {
-    const std::string o3_name(&m_species_names_host(m_o3_species_index, 0));
-    m_o3_field_view = get_field_out(o3_name).get_view<Real **>();
-  }
 
   m_state = explicit_euler_type::real_type_2d_view_type("tchem_state", m_nbatch, m_state_vec_dim);
   const int m_photo_reactions = mam4::mo_photo::phtcnt;
@@ -464,9 +449,11 @@ void TChemATM::run_impl(const double dt) {
     const auto& cldfrac = get_field_in("cldfrac_tot").get_view<const Real **>();
 
     view_2d o3_field;
-    bool have_o3_field = (m_o3_species_index >= 0);
-    if (have_o3_field) {
-      o3_field = m_o3_field_view;
+    bool have_o3_field = false;
+    if (m_o3_species_index >= 0) {
+      const std::string o3_name(&m_species_names_host(m_o3_species_index, 0));
+      o3_field = get_field_out(o3_name).get_view<Real **>();
+      have_o3_field = true;
     }
 
     // ozone column buffer (preallocated in initialize_impl)
@@ -553,7 +540,9 @@ void TChemATM::run_impl(const double dt) {
                   "tchem_init_state_t");
 
   for (int ivar = 0; ivar < m_n_active_vars; ++ivar) {
-    const auto& q_tracer = m_tracer_views[ivar];
+    const auto& tracer_name = std::string(&m_species_names_host(ivar, 0));
+    // std::cout << "[TChemATM] Filling state column for tracer " << tracer_name << "\n";
+    const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
     // Use sampling-aware pack to only pack selected samples (m_sample_icol/ilev)
     tchem::pack_wet_mmr_into_state(state, q_tracer, qv, m_sample_icol, m_sample_ilev,
                 m_nsamples, ivar + 3, m_species_mw[ivar],
@@ -591,8 +580,10 @@ void TChemATM::run_impl(const double dt) {
 
 
   for (int j = 0; j < s_num_cnst_tracers; ++j) {
+    const auto& tracer_name = std::string(&m_species_names_host(m_kmcd.M_index + 6 + j, 0));
+    const auto& q_tracer = get_field_out(tracer_name).get_view<Real **>();
     const int state_col_j = invariant_col + 6 + j;
-    tchem::pack_into_state(state, m_cnst_tracer_views[j], m_sample_icol, m_sample_ilev,
+    tchem::pack_into_state(state, q_tracer, m_sample_icol, m_sample_ilev,
                            m_nsamples, state_col_j,
                            "tchem_compute_cnst_tracer");
   }
@@ -633,9 +624,11 @@ void TChemATM::run_impl(const double dt) {
   }
   // After the TChem run, convert dry-vmr state back to wet-mmr tracer fields.
   for (int ivar = 0; ivar < m_n_active_vars; ++ivar) {
+    const auto& tracer_name = std::string(&m_species_names_host(ivar, 0));
+    const auto& q_tracer = get_field_out(tracer_name).get_view< Real **>();
     // Unpack only sampled entries from TChem state back into wet-mmr tracer field
-    tchem::unpack_wet_mmr_from_state(m_tracer_views[ivar], state, qv, m_sample_icol,
-                  m_sample_ilev, m_nsamples, ivar + 3, m_species_mw[ivar],
+    tchem::unpack_wet_mmr_from_state(q_tracer, state, qv, m_sample_icol, m_sample_ilev,
+                  m_nsamples, ivar + 3, m_species_mw[ivar],
                   "tchem_copy_back_state_tracer");
   }
 
