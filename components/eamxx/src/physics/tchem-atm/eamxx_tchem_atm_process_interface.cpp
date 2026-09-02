@@ -272,9 +272,8 @@ void TChemATM::set_exo_coldens_reader() {
   util::TimeStamp ref_ts_exo_coldens(1, 1, 1, 0, 0, 0);
   m_data_interp_exo_coldens =
       std::make_shared<DataInterpolation>(grid_exo_coldens, m_exo_coldens_fields);
-  m_data_interp_exo_coldens->setup_time_database(
-      {exo_coldens_file_name}, util::TimeLine::YearlyPeriodic,
-      DataInterpolation::Linear, ref_ts_exo_coldens);
+  m_data_interp_exo_coldens->setup_periodic_time_database(
+      {exo_coldens_file_name}, ref_ts_exo_coldens);
   m_data_interp_exo_coldens->create_horiz_remappers(
       exo_coldens_map_file == "none" ? "" : exo_coldens_map_file);
   m_data_interp_exo_coldens->set_logger(m_atm_logger);
@@ -288,7 +287,7 @@ void TChemATM::set_exo_coldens_reader() {
   remap_exo_coldens.custom_remapper = vertical_remapper;
 
   m_data_interp_exo_coldens->create_vert_remapper(remap_exo_coldens);
-  m_data_interp_exo_coldens->init_data_interval(start_of_step_ts());
+  m_data_interp_exo_coldens->init_time_interpolation(start_of_step_ts(), DataInterpolation::Linear);
   m_have_exo_coldens = true;
 }
 
