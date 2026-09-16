@@ -211,7 +211,7 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
       per_team_extent = TChem::AtmosphericChemistryE3SM_ExplicitEuler::getWorkSpaceSize(m_kmcd);
     }
     m_workspace = explicit_euler_type::real_type_2d_view_type(
-        "tchem_workspace", m_nbatch, 10*per_team_extent);
+        "tchem_workspace", m_nbatch, per_team_extent);
   }
   // Photo table initialization (optional)
   const std::string rsf_file = m_params.get<std::string>("mam4_rsf_file", "");
