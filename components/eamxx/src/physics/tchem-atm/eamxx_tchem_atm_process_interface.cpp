@@ -140,6 +140,9 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   m_z_mid      = view_2d("tchem_z_mid",      m_ncols, m_nlevs);
   m_qv_dry     = view_2d("tchem_qv_dry",     m_ncols, m_nlevs);
   m_zenith_angle = view_1d("tchem_zenith_angle", m_ncols);
+  // Pre-allocate host mirror for zenith angle to avoid per-timestep allocation.
+  // Note: shr_orb_cosz_c2f is a Fortran routine that must run on the host.
+  m_zenith_angle_host = host_view_1d("tchem_zenith_angle_host", m_ncols);
   m_ilev_tropp = view_1d_int("tchem_ilev_tropp", m_ncols);
   // Allocate persistent index/offset views once here and reuse in run_impl.
   m_offsets = view_1d_int("tchem_offsets", m_ncols + 1);
@@ -439,14 +442,16 @@ void TChemATM::run_impl(const double dt) {
     double delta = 0, eccf = 1.0;
     shr_orb_decl_c2f(calday, eccen, mvelpp, lambm0, obliqr, &delta, &eccf);
 
-    // Match MAM behavior: compute zenith angle on host, then copy to device.
-    auto zenith_host = Kokkos::create_mirror_view(m_zenith_angle);
+    // Compute zenith angle on host using pre-allocated view, then copy to device.
+    // Note: shr_orb_cosz_c2f is a Fortran routine that cannot run on GPU.
+    // The host view m_zenith_angle_host is pre-allocated in initialize_impl
+    // to avoid per-timestep allocation overhead.
     for (int i = 0; i < m_ncols; ++i) {
       const Real cosz = shr_orb_cosz_c2f(calday, m_col_latitudes_rad(i),
                                           m_col_longitudes_rad(i), delta, dt);
-      zenith_host(i) = acos(cosz);
+      m_zenith_angle_host(i) = std::acos(cosz);
     }
-    Kokkos::deep_copy(m_zenith_angle, zenith_host);
+    Kokkos::deep_copy(m_zenith_angle, m_zenith_angle_host);
 
     // zero the 3D photo buffer
     Kokkos::deep_copy(m_photo_3d, 0.0);
@@ -617,9 +622,13 @@ void TChemATM::run_impl(const double dt) {
           policy, tadv, m_state, m_photo_rates, m_external_sources, t_view,
           dt_view, m_state, m_workspace, m_kmcd);
     }
-    TChem::exec_space().fence();
+
+    // Update time advance struct and compute average time for convergence check.
+    // Note: parallel_reduce with a scalar reduction target implicitly fences
+    // to return the result to the host, so no explicit fence is needed.
     tsum = 0;
     Kokkos::parallel_reduce(
+        "tchem_update_tadv",
         Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
         KOKKOS_LAMBDA(const int i, TChem::real_type& update) {
           tadv(i)._tbeg = t_view(i);
@@ -627,7 +636,6 @@ void TChemATM::run_impl(const double dt) {
           update += t_view(i);
         },
         tsum);
-    Kokkos::fence();
     tsum /= m_nsamples;
   }
   // After the TChem run, convert dry-vmr state back to wet-mmr tracer fields.

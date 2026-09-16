@@ -107,6 +107,8 @@ class TChemATM : public AtmosphereProcess {
   bool m_have_exo_coldens = false;
   // Solar zenith angle (radians) per column for photo table.
   view_1d      m_zenith_angle;
+  // Host mirror of zenith angle - pre-allocated to avoid per-timestep allocation.
+  host_view_1d m_zenith_angle_host;
   // Surface albedo (shortwave, direct), cached like MAM interface.
   const_view_1d m_sfc_alb_dir_vis;
   // Column latitudes and longitudes (radians) — grid geometry, constant throughout run.
