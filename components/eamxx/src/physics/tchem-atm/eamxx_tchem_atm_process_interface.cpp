@@ -423,21 +423,11 @@ void TChemATM::run_impl(const double dt) {
                                 m_sample_ilev, above);
 
   // Compute photo table rates if we have a photo table
-  if (m_have_photo_table) {
-    // Zero photo_rates before computing - this ensures clean state.
-    // Note: We zero only m_nsamples entries (not full m_nbatch) for efficiency.
-    const auto photo_rates_local = m_photo_rates;
-    const int nsamples_local = m_nsamples;
-    const int nphoto_local = static_cast<int>(m_photo_rates.extent(1));
-    Kokkos::parallel_for(
-        "tchem_zero_photo_rates",
-        Kokkos::RangePolicy<TChem::exec_space>(0, nsamples_local),
-        KOKKOS_LAMBDA(const int i) {
-          for (int j = 0; j < nphoto_local; ++j) {
-            photo_rates_local(i, j) = 0.0;
-          }
-        });
-    
+ if (m_have_photo_table) {
+    // Zero photo_rates before computing - must zero full m_nbatch to ensure
+   // no stale data when m_nsamples < m_nbatch (troposphere/stratosphere selection).
+    Kokkos::deep_copy(m_photo_rates, 0.0);
+
     // Compute orbital eccentricity factor used by MAM photo_table.
     int orbital_year = m_orbital_year;
     double eccen = m_orbital_eccen;
@@ -466,8 +456,10 @@ void TChemATM::run_impl(const double dt) {
     }
     Kokkos::deep_copy(m_zenith_angle, m_zenith_angle_host);
 
-    // Prepare inputs
-    // Note: m_photo_3d is fully written by table_photo, no need to zero first.
+    // Zero the 3D photo buffer before table_photo fills it
+    Kokkos::deep_copy(m_photo_3d, 0.0);
+
+    // Prepare inputs for photo table computation
     const auto& sfc_alb = m_sfc_alb_dir_vis;
     const auto& zenith_angle = m_zenith_angle;
     const auto& qc_field = get_field_in("qc").get_view<const Real **>();
@@ -482,7 +474,8 @@ void TChemATM::run_impl(const double dt) {
     }
 
     // ozone column buffer (preallocated in initialize_impl)
-    // Note: m_o3col_dens is fully written by compute_o3_column_density, no need to zero first.
+    // Zero o3 column density - only written when have_o3_field is true
+    Kokkos::deep_copy(m_o3col_dens, 0.0);
     view_2d o3_exo_col;
     const bool have_o3_exo_col = m_have_exo_coldens && !m_exo_coldens_fields.empty();
     if (have_o3_exo_col) {
@@ -542,45 +535,30 @@ void TChemATM::run_impl(const double dt) {
   }
 
 
-  // Initialize solver state arrays in a single fused kernel to reduce launch overhead.
-  // This replaces multiple deep_copy calls (m_external_sources, m_t, m_dt_view, 
-  // m_tadv, m_photo_rates) with one parallel_for over m_nsamples.
+  // Initialize solver state arrays.
+  // NOTE: Must use deep_copy for full m_nbatch extent to ensure BFB results
+  // when m_nsamples < m_nbatch (troposphere/stratosphere selection).
+  Kokkos::deep_copy(m_external_sources, 0.0);
+  Kokkos::deep_copy(m_t, 0.0);
+  Kokkos::deep_copy(m_dt_view, dt);
+
   const Real dtmax_sub = (m_dtmax_sub > 0.0) ? m_dtmax_sub : dt;
   const Real dtmin_sub = m_dtmin_sub;
-  const int max_newton_iters = m_max_newton_iterations;
-  const int jacobian_interval = m_jacobian_interval;
-  const int n_active_vars = m_n_active_vars;
-  const int nsamples = m_nsamples;
-  const auto external_sources = m_external_sources;
+  TChem::time_advance_type tadv_default;
+  tadv_default._tbeg = 0;
+  tadv_default._tend = dt;
+  tadv_default._dt   = dtmax_sub;
+  tadv_default._dtmin = dtmin_sub;
+  tadv_default._dtmax = dtmax_sub;
+  tadv_default._max_num_newton_iterations = m_max_newton_iterations;
+  tadv_default._num_time_iterations_per_interval = 100;
+  tadv_default._jacobian_interval = m_jacobian_interval;
+  Kokkos::deep_copy(m_tadv, tadv_default);
+
+  // Create local copies for device lambdas (avoid implicit this capture)
   const auto t_view = m_t;
   const auto dt_view_local = m_dt_view;
   const auto tadv = m_tadv;
-  const Real dt_local = dt;  // Explicit capture for device lambda
-  
-  Kokkos::parallel_for(
-      "tchem_init_solver_state",
-      Kokkos::RangePolicy<TChem::exec_space>(0, nsamples),
-      KOKKOS_LAMBDA(const int i) {
-        // Zero external sources for this sample
-        for (int j = 0; j < n_active_vars; ++j) {
-          external_sources(i, j) = 0.0;
-        }
-        // Note: photo_rates zeroing is handled separately:
-        // - If photo table enabled: zeroed at start of photo section
-        // - If photo table disabled: photo_rates not used by solver
-        // Initialize time stepping state
-        t_view(i) = 0.0;
-        dt_view_local(i) = dt_local;
-        // Initialize time advance struct
-        tadv(i)._tbeg = 0;
-        tadv(i)._tend = dt_local;
-        tadv(i)._dt = dtmax_sub;
-        tadv(i)._dtmin = dtmin_sub;
-        tadv(i)._dtmax = dtmax_sub;
-        tadv(i)._max_num_newton_iterations = max_newton_iters;
-        tadv(i)._num_time_iterations_per_interval = 100;
-        tadv(i)._jacobian_interval = jacobian_interval;
-      });
 
   // Pack pressure and temperature into the state for all selected samples
   tchem::pack_into_state(state, p_mid, m_sample_icol, m_sample_ilev, m_nsamples, 1,
