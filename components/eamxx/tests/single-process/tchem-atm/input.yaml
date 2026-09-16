@@ -62,6 +62,9 @@ eamxx:
       SOAG33: 250.445000
       SOAG34: 250.445000
       SOAG35: 250.445000
+      soa_a1: 250.445000
+      soa_a2: 250.445000
+      soa_a3: 250.445000
 
 grids_manager:
   type: mesh_free
@@ -125,4 +128,10 @@ initial_conditions:
   prsd_O3: 2.563385693528147e-07
   prsd_NO3: 1.8520090768415853e-12
   prsd_OH: 2.8763187214033796e-12
+  soa_a1: 0.0 
+  soa_a2: 0.0 
+  soa_a3: 0.0 
+# The parameters for I/O control
+scorpio:
+  output_yaml_files: ["output.yaml"]
 ...
