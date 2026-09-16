@@ -13,172 +13,8 @@
 
 #include <algorithm>
 
-// CVODE batch solver support
-#if defined(TCHEM_ATM_ENABLE_SUNDIALS)
-#include "TChem_Impl_AtmosphericChemistryE3SM_Problem.hpp"
-#include "TChem_Impl_NetProductionRates.hpp"
-#endif
-
 namespace scream {
 
-// ============================================================================
-// CVODE Batch Solver Static Callback Functions
-// ============================================================================
-#if defined(TCHEM_ATM_ENABLE_SUNDIALS)
-
-// RHS function: dy/dt = f(t,y)
-// This is called by CVODE to evaluate the right-hand side for all batches
-int TChemATM::cvode_rhs_func(sunrealtype t, N_Vector y, N_Vector ydot, void* user_data) {
-  auto* udata = static_cast<CVODEUserData*>(user_data);
-  
-  const auto nbatches = udata->nbatches;
-  const auto batchSize = udata->batchSize;
-  const auto policy = udata->policy;
-  const auto kmcd = udata->kmcd;
-  const auto temperature = udata->temperature;
-  const auto pressure = udata->pressure;
-  const auto const_tracers = udata->const_tracers;
-  const auto photo_rates = udata->photo_rates;
-  const auto external_sources = udata->external_sources;
-
-  // Wrap NVector data as 2D Kokkos views
-  cvode_real_type_2d_view vals(N_VGetDeviceArrayPointer(y), nbatches, batchSize);
-  cvode_real_type_2d_view rhs(N_VGetDeviceArrayPointer(ydot), nbatches, batchSize);
-
-  using problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<Real, cvode_device_type>;
-  
-  const TChem::ordinal_type level = 1;
-  const TChem::ordinal_type per_team_extent = problem_type::getWorkSpaceSize(kmcd);
-  const std::string profile_name = "TChem::AtmosphericChemistryE3SM::CVODE_RHS";
-
-  Kokkos::Profiling::pushRegion(profile_name);
-  Kokkos::parallel_for(
-      profile_name, policy,
-      KOKKOS_LAMBDA(const typename cvode_policy_type::member_type& member) {
-        const TChem::ordinal_type i = member.league_rank();
-        
-        const auto vals_at_i = Kokkos::subview(vals, i, Kokkos::ALL());
-        const auto rhs_at_i = Kokkos::subview(rhs, i, Kokkos::ALL());
-        const auto const_tracers_at_i = Kokkos::subview(const_tracers, i, Kokkos::ALL());
-        
-        cvode_real_type_1d_view photo_rates_at_i;
-        if (photo_rates.extent(0) > 0) {
-          photo_rates_at_i = Kokkos::subview(photo_rates, i, Kokkos::ALL());
-        }
-        
-        cvode_real_type_1d_view external_sources_at_i;
-        if (external_sources.extent(0) > 0) {
-          external_sources_at_i = Kokkos::subview(external_sources, i, Kokkos::ALL());
-        }
-        
-        TChem::Scratch<cvode_real_type_1d_view> work(member.team_scratch(level), per_team_extent);
-        
-        // Compute RHS using TChem's NetProductionRates
-        if (kmcd.nConstSpec > 0) {
-          TChem::Impl::NetProductionRates<Real, cvode_device_type>::team_invoke(
-              member, temperature(i), pressure(i), vals_at_i, photo_rates_at_i,
-              external_sources_at_i, const_tracers_at_i, rhs_at_i, work, kmcd);
-        } else {
-          TChem::Impl::NetProductionRates<Real, cvode_device_type>::team_invoke(
-              member, temperature(i), pressure(i), vals_at_i, photo_rates_at_i,
-              external_sources_at_i, rhs_at_i, work, kmcd);
-        }
-      });
-  Kokkos::Profiling::popRegion();
-  
-  return 0;
-}
-
-// Jacobian function: J = df/dy
-// This is called by CVODE to evaluate the Jacobian for all batches
-int TChemATM::cvode_jac_func(sunrealtype t, N_Vector y, N_Vector fy, SUNMatrix J,
-                              void* user_data, N_Vector tmp1, N_Vector tmp2, N_Vector tmp3) {
-  auto* udata = static_cast<CVODEUserData*>(user_data);
-  
-  const auto nbatches = udata->nbatches;
-  const auto batchSize = udata->batchSize;
-  const auto policy = udata->policy;
-  const auto kmcd = udata->kmcd;
-  const auto temperature = udata->temperature;
-  const auto pressure = udata->pressure;
-  const auto const_tracers = udata->const_tracers;
-  const auto photo_rates = udata->photo_rates;
-  const auto external_sources = udata->external_sources;
-  const auto fac = udata->fac;
-
-  cvode_real_type_2d_view vals(N_VGetDeviceArrayPointer(y), nbatches, batchSize);
-  auto J_data = sundials::kokkos::GetDenseMat<CVODEMatType>(J)->View();
-
-  using problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<Real, cvode_device_type>;
-
-  const TChem::ordinal_type level = 1;
-  const TChem::ordinal_type per_team_extent = problem_type::getWorkSpaceSize(kmcd) + batchSize;
-  const std::string profile_name = "TChem::AtmosphericChemistryE3SM::CVODE_Jac";
-
-#if defined(TCHEM_ATM_ENABLE_GPU)
-  const auto JacRL = udata->JacRL;
-#endif
-
-  Kokkos::Profiling::pushRegion(profile_name);
-  Kokkos::parallel_for(
-      profile_name, policy,
-      KOKKOS_LAMBDA(const typename cvode_policy_type::member_type& member) {
-        const TChem::ordinal_type i = member.league_rank();
-        
-        const auto vals_at_i = Kokkos::subview(vals, i, Kokkos::ALL());
-        const auto fac_at_i = Kokkos::subview(fac, i, Kokkos::ALL());
-        const auto const_tracers_at_i = Kokkos::subview(const_tracers, i, Kokkos::ALL());
-        
-#if defined(TCHEM_ATM_ENABLE_GPU)
-        const auto jacobian_at_i = Kokkos::subview(JacRL, i, Kokkos::ALL(), Kokkos::ALL());
-#else
-        const auto jacobian_at_i = Kokkos::subview(J_data, i, Kokkos::ALL(), Kokkos::ALL());
-#endif
-        
-        cvode_real_type_1d_view photo_rates_at_i;
-        if (photo_rates.extent(0) > 0) {
-          photo_rates_at_i = Kokkos::subview(photo_rates, i, Kokkos::ALL());
-        }
-        
-        cvode_real_type_1d_view external_sources_at_i;
-        if (external_sources.extent(0) > 0) {
-          external_sources_at_i = Kokkos::subview(external_sources, i, Kokkos::ALL());
-        }
-        
-        TChem::Scratch<cvode_real_type_1d_view> work(member.team_scratch(level), per_team_extent);
-        auto wptr = work.data();
-        
-        const TChem::ordinal_type problem_workspace_size = problem_type::getWorkSpaceSize(kmcd);
-        auto pw = cvode_real_type_1d_view(wptr, problem_workspace_size);
-        wptr += problem_workspace_size;
-        
-        problem_type problem;
-        problem._kmcd = kmcd;
-        problem._fac = fac_at_i;
-        problem._work = pw;
-        problem._temperature = temperature(i);
-        problem._pressure = pressure(i);
-        problem._const_concentration = const_tracers_at_i;
-        problem._photo_rates = photo_rates_at_i;
-        problem._external_sources = external_sources_at_i;
-        
-        problem.computeNumericalJacobian(member, vals_at_i, jacobian_at_i);
-        
-#if defined(TCHEM_ATM_ENABLE_GPU)
-        // Copy from right-layout to left-layout for Sundials compatibility
-        for (int k = 0; k < batchSize; ++k) {
-          for (int j = 0; j < batchSize; ++j) {
-            J_data(i, k, j) = jacobian_at_i(k, j);
-          }
-        }
-#endif
-      });
-  Kokkos::Profiling::popRegion();
-  
-  return 0;
-}
-
-#endif  // TCHEM_ATM_ENABLE_SUNDIALS
 
 TChemATM::TChemATM(const ekat::Comm& comm, const ekat::ParameterList& params)
     : AtmosphereProcess(comm, params) {}
@@ -320,15 +156,9 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     m_solver_enum = SolverType::TRBDF2;
   } else if (m_solver_type == "explicit_euler") {
     m_solver_enum = SolverType::ExplicitEuler;
-  } else if (m_solver_type == "cvode_batch") {
-#if defined(TCHEM_ATM_ENABLE_SUNDIALS)
-    m_solver_enum = SolverType::CVODEBatch;
-#else
-    EKAT_REQUIRE_MSG(false, "Error! solver_type 'cvode_batch' requires TCHEM_ATM_ENABLE_SUNDIALS=ON.\n");
-#endif
   } else {
     EKAT_REQUIRE_MSG(false, "Error! Unknown solver_type '" + m_solver_type +
-                     "'. Valid options: implicit_euler, trbdf2, explicit_euler, cvode_batch.\n");
+                     "'. Valid options: implicit_euler, trbdf2, explicit_euler.\n");
   }
   m_max_time_iterations    = m_params.get<int>("max_time_iterations", 100);
   m_max_newton_iterations  = m_params.get<int>("max_newton_iterations", 100);
@@ -383,87 +213,6 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     m_workspace = explicit_euler_type::real_type_2d_view_type(
         "tchem_workspace", m_nbatch, per_team_extent);
   }
-
-  // Read CVODE-specific parameters from namelist
-  m_cvode_rtol = m_params.get<double>("cvode_rtol", 1e-4);
-  m_cvode_atol = m_params.get<double>("cvode_atol", 1e-12);
-
-  // CVODE batch solver initialization
-#if defined(TCHEM_ATM_ENABLE_SUNDIALS)
-  if (m_solver_enum == SolverType::CVODEBatch) {
-    using problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<Real, cvode_device_type>;
-    const TChem::ordinal_type number_of_equations = problem_type::getNumberOfTimeODEs(m_kmcd);
-    
-    if (m_atm_logger) m_atm_logger->info("[TChemATM] Initializing CVODE batch solver");
-    
-    // Create Sundials context
-    m_sundials_ctx = std::make_unique<sundials::Context>();
-    
-    // Allocate CVODE vectors
-    CVODESizeType length{static_cast<CVODESizeType>(m_nbatch * number_of_equations)};
-    m_cvode_y = std::make_unique<CVODEVecType>(length, *m_sundials_ctx);
-    m_cvode_abstol = std::make_unique<CVODEVecType>(length, *m_sundials_ctx);
-    N_VConst(SUN_RCONST(m_cvode_atol), *m_cvode_abstol);
-    
-    // Create CVODE memory using BDF methods (suitable for stiff problems)
-    m_cvode_mem = CVodeCreate(CV_BDF, *m_sundials_ctx);
-    EKAT_REQUIRE_MSG(m_cvode_mem != nullptr, "Error! CVodeCreate failed.\n");
-    
-    // Initialize with t0=0, y0 will be set in run_impl
-    int retval = CVodeInit(m_cvode_mem, cvode_rhs_func, SUN_RCONST(0.0), *m_cvode_y);
-    EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeInit failed with code " + std::to_string(retval) + ".\n");
-    
-    // Set tolerances
-    retval = CVodeSVtolerances(m_cvode_mem, SUN_RCONST(m_cvode_rtol), *m_cvode_abstol);
-    EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeSVtolerances failed.\n");
-    
-    // Allocate user data views
-    m_cvode_temperature = cvode_real_type_1d_view("cvode_temperature", m_nbatch);
-    m_cvode_pressure = cvode_real_type_1d_view("cvode_pressure", m_nbatch);
-    m_cvode_const_tracers = cvode_real_type_2d_view("cvode_const_tracers", m_nbatch, m_kmcd.nConstSpec);
-    
-    // Set up user data structure
-    m_cvode_udata.nbatches = m_nbatch;
-    m_cvode_udata.batchSize = number_of_equations;
-    m_cvode_udata.kmcd = m_kmcd;
-    m_cvode_udata.temperature = m_cvode_temperature;
-    m_cvode_udata.pressure = m_cvode_pressure;
-    m_cvode_udata.const_tracers = m_cvode_const_tracers;
-    m_cvode_udata.photo_rates = m_photo_rates;
-    m_cvode_udata.external_sources = m_external_sources;
-    m_cvode_udata.fac = cvode_real_type_2d_view("cvode_fac", m_nbatch, number_of_equations);
-    Kokkos::deep_copy(m_cvode_udata.fac, 0.0);
-    
-#if defined(TCHEM_ATM_ENABLE_GPU)
-    m_cvode_udata.JacRL = cvode_real_type_3d_view("cvode_JacRL", m_nbatch, number_of_equations, number_of_equations);
-#endif
-    
-    // Attach user data
-    retval = CVodeSetUserData(m_cvode_mem, &m_cvode_udata);
-    EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeSetUserData failed.\n");
-    
-    // Set up dense direct linear solver with user-supplied Jacobian
-    m_cvode_A = std::make_unique<CVODEMatType>(m_nbatch, number_of_equations, number_of_equations, *m_sundials_ctx);
-    m_cvode_LS = std::make_unique<CVODELSType>(*m_sundials_ctx);
-    
-    retval = CVodeSetLinearSolver(m_cvode_mem, *m_cvode_LS, *m_cvode_A);
-    EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeSetLinearSolver (dense) failed.\n");
-    
-    retval = CVodeSetJacFn(m_cvode_mem, cvode_jac_func);
-    EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeSetJacFn failed.\n");
-    
-    const TChem::ordinal_type per_team_extent_cvode = problem_type::getWorkSpaceSize(m_kmcd) + number_of_equations;
-    
-    // Set up team policy for CVODE callbacks
-    m_cvode_udata.policy = cvode_policy_type(TChem::exec_space(), m_nbatch, Kokkos::AUTO());
-    const TChem::ordinal_type per_team_scratch =
-        TChem::Scratch<cvode_real_type_1d_view>::shmem_size(per_team_extent_cvode);
-    m_cvode_udata.policy.set_scratch_size(1, Kokkos::PerTeam(per_team_scratch));
-    
-    if (m_atm_logger) m_atm_logger->info("[TChemATM] CVODE batch solver initialized successfully");
-  }
-#endif  // TCHEM_ATM_ENABLE_SUNDIALS
-
   // Photo table initialization (optional)
   const std::string rsf_file = m_params.get<std::string>("mam4_rsf_file", "");
   const std::string xs_long_file = m_params.get<std::string>("mam4_xs_long_file", "");
@@ -870,135 +619,39 @@ void TChemATM::run_impl(const double dt) {
   // Time loop: mirrors TChem_AtmosphericChemistryE3SM.cpp standalone example.
   // Solver type and time-stepping parameters are controlled via namelist.
   // Note: tadv, t_view, dt_view_local are already defined above for init kernel.
+  TChem::real_type tsum(0);
+  for (int iter = 0; iter < m_max_time_iterations && tsum <= dt * 0.9999;
+       ++iter) {
 
-  // ============================================================================
-  // Time Integration - Solver-specific paths
-  // ============================================================================
-  
-#if defined(TCHEM_ATM_ENABLE_SUNDIALS)
-  if (m_solver_enum == SolverType::CVODEBatch) {
-    // ========================================================================
-    // CVODE Batch Solver Path
-    // ========================================================================
-    using cvode_problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<Real, cvode_device_type>;
-    const TChem::ordinal_type number_of_equations = cvode_problem_type::getNumberOfTimeODEs(m_kmcd);
-    
-    // Update user data views for this timestep
-    // Copy temperature and pressure from sampled state to CVODE views
-    const auto cvode_temperature = m_cvode_temperature;
-    const auto cvode_pressure = m_cvode_pressure;
-    const auto cvode_const_tracers = m_cvode_const_tracers;
-    const auto nConstSpec = m_kmcd.nConstSpec;
-    
-    Kokkos::parallel_for(
-        "cvode_copy_T_P", Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
-        KOKKOS_LAMBDA(const int isample) {
-          const int icol = sample_icol(isample);
-          const int ilev = sample_ilev(isample);
-          cvode_temperature(isample) = t_mid(icol, ilev);
-          cvode_pressure(isample) = p_mid(icol, ilev);
-        });
-    
-    // Copy constant tracers from state to CVODE const_tracers view
-    const int const_tracer_start = m_n_active_vars + 3;  // After P, T, density and active vars
-    Kokkos::parallel_for(
-        "cvode_copy_const_tracers", Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
-        KOKKOS_LAMBDA(const int isample) {
-          for (int j = 0; j < nConstSpec; ++j) {
-            cvode_const_tracers(isample, j) = state(isample, const_tracer_start + j);
-          }
-        });
-    
-    // Wrap CVODE y vector as 2D view and copy active species from state
-    cvode_real_type_2d_view y2d(m_cvode_y->View().data(), m_nsamples, number_of_equations);
-    
-    Kokkos::parallel_for(
-        "cvode_pack_y", Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
-        KOKKOS_LAMBDA(const int isample) {
-          for (int j = 0; j < number_of_equations; ++j) {
-            y2d(isample, j) = state(isample, j + 3);  // Skip P, T, density in state
-          }
-        });
-    
-    // Update UserData with current photo_rates and external_sources
-    m_cvode_udata.photo_rates = m_photo_rates;
-    m_cvode_udata.external_sources = m_external_sources;
-    m_cvode_udata.nbatches = m_nsamples;  // Use actual sample count, not full batch
-    
-    // Update policy for current sample count
-    m_cvode_udata.policy = cvode_policy_type(TChem::exec_space(), m_nsamples, Kokkos::AUTO());
-    const TChem::ordinal_type cvode_per_team_extent = 
-        cvode_problem_type::getWorkSpaceSize(m_kmcd) + number_of_equations;
-    const TChem::ordinal_type cvode_per_team_scratch =
-        TChem::Scratch<cvode_real_type_1d_view>::shmem_size(cvode_per_team_extent);
-    m_cvode_udata.policy.set_scratch_size(1, Kokkos::PerTeam(cvode_per_team_scratch));
-    
-    // Reinitialize CVODE for this timestep (t0=0, y0 = current y)
-    int retval = CVodeReInit(m_cvode_mem, SUN_RCONST(0.0), *m_cvode_y);
-    EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeReInit failed.\n");
-    
-    // Time integration using CVODE - advance from t=0 to t=dt
-    const sunrealtype Tf = SUN_RCONST(dt);
-    sunrealtype t_cvode = SUN_RCONST(0.0);
-    
-    // Advance CVODE to final time
-    retval = CVode(m_cvode_mem, Tf, *m_cvode_y, &t_cvode, CV_NORMAL);
-    
-    if (retval < 0) {
-      if (m_atm_logger) m_atm_logger->warn("[TChemATM] CVode returned error code " + std::to_string(retval));
-    }
-    
-    // Copy results back from y to state
-    Kokkos::parallel_for(
-        "cvode_unpack_y", Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
-        KOKKOS_LAMBDA(const int isample) {
-          for (int j = 0; j < number_of_equations; ++j) {
-            state(isample, j + 3) = y2d(isample, j);
-          }
-        });
-    
-  } else
-#endif  // TCHEM_ATM_ENABLE_SUNDIALS
-  {
-    // ========================================================================
-    // TChem Native Solvers Path (ImplicitEuler, TRBDF2, ExplicitEuler)
-    // ========================================================================
-    
-    TChem::real_type tsum(0);
-    for (int iter = 0; iter < m_max_time_iterations && tsum <= dt * 0.9999;
-         ++iter) {
+    if (m_solver_enum == SolverType::ImplicitEuler) {
+      implicit_euler_type::runDeviceBatch(
+         policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
+          m_external_sources, t_view, dt_view_local, m_state, m_workspace, m_kmcd);
+   } else if (m_solver_enum == SolverType::TRBDF2) {
+     trbdf2_type::runDeviceBatch(
+         policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
+          m_external_sources, t_view, dt_view_local, m_state, m_kmcd);
+   } else {
+     explicit_euler_type::runDeviceBatch(
+         policy, tadv, m_state, m_photo_rates, m_external_sources, t_view,
+          dt_view_local, m_state, m_workspace, m_kmcd);
+   }
 
-      if (m_solver_enum == SolverType::ImplicitEuler) {
-        implicit_euler_type::runDeviceBatch(
-           policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
-            m_external_sources, t_view, dt_view_local, m_state, m_workspace, m_kmcd);
-      } else if (m_solver_enum == SolverType::TRBDF2) {
-        trbdf2_type::runDeviceBatch(
-            policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
-            m_external_sources, t_view, dt_view_local, m_state, m_kmcd);
-      } else {
-        explicit_euler_type::runDeviceBatch(
-            policy, tadv, m_state, m_photo_rates, m_external_sources, t_view,
-            dt_view_local, m_state, m_workspace, m_kmcd);
-      }
-
-      // Update time advance struct and compute average time for convergence check.
-      // Note: parallel_reduce with a scalar reduction target implicitly fences
-      // to return the result to the host, so no explicit fence is needed.
-      tsum = 0;
-      Kokkos::parallel_reduce(
-          "tchem_update_tadv",
-          Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
-          KOKKOS_LAMBDA(const int i, TChem::real_type& update) {
-            tadv(i)._tbeg = t_view(i);
-            tadv(i)._dt   = dt_view_local(i);
-            update += t_view(i);
-          },
-          tsum);
-      tsum /= m_nsamples;
-    }
+    // Update time advance struct and compute average time for convergence check.
+    // Note: parallel_reduce with a scalar reduction target implicitly fences
+    // to return the result to the host, so no explicit fence is needed.
+    tsum = 0;
+    Kokkos::parallel_reduce(
+        "tchem_update_tadv",
+        Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
+        KOKKOS_LAMBDA(const int i, TChem::real_type& update) {
+          tadv(i)._tbeg = t_view(i);
+          tadv(i)._dt   = dt_view_local(i);
+          update += t_view(i);
+        },
+        tsum);
+    tsum /= m_nsamples;
   }
-
   // After the TChem run, convert dry-vmr state back to wet-mmr tracer fields.
   for (int ivar = 0; ivar < m_n_active_vars; ++ivar) {
     const auto& tracer_name = std::string(&m_species_names_host(ivar, 0));
@@ -1020,22 +673,6 @@ void TChemATM::run_impl(const double dt) {
   // modify TChem-atm functions signature to pass tem and pressure
   // connect to aerosols.
   // use Analitycal Jacobian.
-}
-
-void TChemATM::finalize_impl() {
-  // Clean up CVODE resources if allocated
-#if defined(TCHEM_ATM_ENABLE_SUNDIALS)
-  if (m_cvode_mem != nullptr) {
-    CVodeFree(&m_cvode_mem);
-    m_cvode_mem = nullptr;
-  }
-  // Smart pointers will automatically clean up m_cvode_y, m_cvode_abstol, etc.
-  m_sundials_ctx.reset();
-  m_cvode_y.reset();
-  m_cvode_abstol.reset();
-  m_cvode_A.reset();
-  m_cvode_LS.reset();
-#endif
 }
 
 }  // namespace scream

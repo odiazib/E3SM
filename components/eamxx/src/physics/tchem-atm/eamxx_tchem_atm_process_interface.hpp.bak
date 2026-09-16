@@ -8,70 +8,11 @@
 #include <vector>
 #include <mam4xx/mo_photo.hpp>
 
-// CVODE batch solver support (guarded by Sundials availability)
-#if defined(TCHEM_ATM_ENABLE_SUNDIALS)
-#include <cvode/cvode.h>
-#include <sundials/sundials_core.hpp>
-#include <nvector/nvector_kokkos.hpp>
-#include <sunmatrix/sunmatrix_kokkosdense.hpp>
-#include <sunlinsol/sunlinsol_kokkosdense.hpp>
-#endif
-
 namespace scream {
 
 class DataInterpolation;
 
 class TChemATM : public AtmosphereProcess {
-#if defined(TCHEM_ATM_ENABLE_SUNDIALS)
-  // ============================================================
-  // CVODE Batch Solver Types and UserData Structure
-  // ============================================================
- public:
-  using cvode_device_type = typename Tines::UseThisDevice<TChem::exec_space>::type;
-  using cvode_real_type_1d_view = Tines::value_type_1d_view<Real, cvode_device_type>;
-  using cvode_real_type_2d_view = Tines::value_type_2d_view<Real, cvode_device_type>;
-  using cvode_real_type_3d_view = Tines::value_type_3d_view<Real, cvode_device_type>;
-  using cvode_policy_type = typename TChem::UseThisTeamPolicy<TChem::exec_space>::type;
-  using CVODEVecType = sundials::kokkos::Vector<TChem::exec_space>;
-  using CVODEMatType = sundials::kokkos::DenseMatrix<TChem::exec_space>;
-  using CVODELSType  = sundials::kokkos::DenseLinearSolver<TChem::exec_space>;
-  using CVODESizeType = typename CVODEVecType::size_type;
-
-  // UserData structure passed to CVODE RHS and Jacobian callbacks
-  struct CVODEUserData {
-    int nbatches = 0;
-    int batchSize = 0;
-    cvode_policy_type policy;
-    cvode_real_type_1d_view temperature;
-    cvode_real_type_1d_view pressure;
-    cvode_real_type_2d_view const_tracers;
-    cvode_real_type_2d_view photo_rates;
-    cvode_real_type_2d_view external_sources;
-    cvode_real_type_2d_view fac;
-#if defined(TCHEM_ATM_ENABLE_GPU)
-    cvode_real_type_3d_view JacRL;  // Right-layout Jacobian for GPU transpose
-#endif
-    TChem::KineticModelNCAR_ConstData<cvode_device_type> kmcd;
-  };
-
-  // Static CVODE callback functions for RHS and Jacobian
-  static int cvode_rhs_func(sunrealtype t, N_Vector y, N_Vector ydot, void* user_data);
-  static int cvode_jac_func(sunrealtype t, N_Vector y, N_Vector fy, SUNMatrix J,
-                            void* user_data, N_Vector tmp1, N_Vector tmp2, N_Vector tmp3);
-
- private:
-  // CVODE batch solver state (allocated in initialize_impl if solver_type == "cvode_batch")
-  std::unique_ptr<sundials::Context> m_sundials_ctx;
-  void* m_cvode_mem = nullptr;
-  std::unique_ptr<CVODEVecType> m_cvode_y;
-  std::unique_ptr<CVODEVecType> m_cvode_abstol;
-  std::unique_ptr<sundials::ConvertibleTo<SUNMatrix>> m_cvode_A;
-  std::unique_ptr<sundials::ConvertibleTo<SUNLinearSolver>> m_cvode_LS;
-  CVODEUserData m_cvode_udata;
-  cvode_real_type_1d_view m_cvode_temperature;
-  cvode_real_type_1d_view m_cvode_pressure;
-  cvode_real_type_2d_view m_cvode_const_tracers;
-#endif  // TCHEM_ATM_ENABLE_SUNDIALS
  public:
   using tchem_device_type = typename Tines::UseThisDevice<TChem::exec_space>::type;
   using explicit_euler_type  = TChem::AtmosphericChemistryE3SM_ExplicitEuler;
@@ -97,7 +38,7 @@ class TChemATM : public AtmosphereProcess {
 //  protected:
   void initialize_impl(const RunType run_type) override;
   void run_impl(const double dt) override;
-  void finalize_impl() override;
+  void finalize_impl() override {}
 
  private:
   int get_len_temporary_views();
@@ -126,7 +67,7 @@ class TChemATM : public AtmosphereProcess {
   TChem::ordinal_type m_state_vec_dim = 0;
   bool m_tchem_ready = false;
   // Solver selection and time-stepping parameters (read from namelist).
-  enum class SolverType { CVODEBatch, ExplicitEuler, ImplicitEuler, TRBDF2 };
+  enum class SolverType { ExplicitEuler, ImplicitEuler, TRBDF2 };
   SolverType   m_solver_enum = SolverType::ExplicitEuler;
   std::string  m_solver_type = "explicit_euler"; // kept for logging only
   int m_max_time_iterations = 1000;
@@ -145,9 +86,6 @@ class TChemATM : public AtmosphereProcess {
   // Pre-allocated global workspace [nbatch x per_team_extent].
   // Used when m_use_shared_workspace is false.
   explicit_euler_type::real_type_2d_view_type m_workspace;
-  // CVODE-specific tolerance parameters (read from namelist)
-  Real m_cvode_rtol = 1e-4;
-  Real m_cvode_atol = 1e-12;
   bool m_use_shared_workspace = true;
   // Temporary views for tropopause computation
   view_2d      m_dz;
@@ -194,6 +132,3 @@ class TChemATM : public AtmosphereProcess {
 }  // namespace scream
 
 #endif  // EAMXX_TCHEM_ATM_PROCESS_INTERFACE_HPP
-#if defined(TCHEM_ATM_ENABLE_SUNDIALS)
-  void cleanup_cvode();
-#endif
