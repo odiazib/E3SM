@@ -606,11 +606,13 @@ void TChemATM::run_impl(const double dt) {
 
   // invariant_col: first column index in state[] where invariants are stored
   const int invariant_col = m_kmcd.M_index + 3;
+  const auto sample_icol = m_sample_icol;
+  const auto sample_ilev = m_sample_ilev;
   Kokkos::parallel_for(
       "tchem_compute_M", Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
       KOKKOS_LAMBDA(const int isample) {
-        const int icol = m_sample_icol(isample);
-        const int ilev = m_sample_ilev(isample);
+        const int icol = sample_icol(isample);
+        const int ilev = sample_ilev(isample);
         const Real M_value =
             Pa_xfac * p_mid(icol, ilev) / (boltz_cgs * t_mid(icol, ilev));
         state(isample, invariant_col) = M_value;
@@ -638,26 +640,24 @@ void TChemATM::run_impl(const double dt) {
   }
   // Time loop: mirrors TChem_AtmosphericChemistryE3SM.cpp standalone example.
   // Solver type and time-stepping parameters are controlled via namelist.
+  // Note: tadv, t_view, dt_view_local are already defined above for init kernel.
   TChem::real_type tsum(0);
-  const auto& tadv        = m_tadv;
-  const auto& t_view      = m_t;
-  const auto& dt_view     = m_dt_view;
   for (int iter = 0; iter < m_max_time_iterations && tsum <= dt * 0.9999;
        ++iter) {
 
     if (m_solver_enum == SolverType::ImplicitEuler) {
       implicit_euler_type::runDeviceBatch(
-          policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
-          m_external_sources, t_view, dt_view, m_state, m_workspace, m_kmcd);
-    } else if (m_solver_enum == SolverType::TRBDF2) {
-      trbdf2_type::runDeviceBatch(
-          policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
-          m_external_sources, t_view, dt_view, m_state, m_kmcd);
-    } else {
-      explicit_euler_type::runDeviceBatch(
-          policy, tadv, m_state, m_photo_rates, m_external_sources, t_view,
-          dt_view, m_state, m_workspace, m_kmcd);
-    }
+         policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
+          m_external_sources, t_view, dt_view_local, m_state, m_workspace, m_kmcd);
+   } else if (m_solver_enum == SolverType::TRBDF2) {
+     trbdf2_type::runDeviceBatch(
+         policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state, m_photo_rates,
+          m_external_sources, t_view, dt_view_local, m_state, m_kmcd);
+   } else {
+     explicit_euler_type::runDeviceBatch(
+         policy, tadv, m_state, m_photo_rates, m_external_sources, t_view,
+          dt_view_local, m_state, m_workspace, m_kmcd);
+   }
 
     // Update time advance struct and compute average time for convergence check.
     // Note: parallel_reduce with a scalar reduction target implicitly fences
@@ -668,7 +668,7 @@ void TChemATM::run_impl(const double dt) {
         Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
         KOKKOS_LAMBDA(const int i, TChem::real_type& update) {
           tadv(i)._tbeg = t_view(i);
-          tadv(i)._dt   = dt_view(i);
+          tadv(i)._dt   = dt_view_local(i);
           update += t_view(i);
         },
         tsum);
