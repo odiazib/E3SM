@@ -245,6 +245,7 @@ void TChemATM::set_exo_coldens_reader() {
   using namespace ekat::units;
   using namespace ShortFieldTagsNames;
 
+  // Check if exo coldens is requested (optional feature)
   const std::string exo_coldens_file_name =
       m_params.get<std::string>("mam4_exo_coldens_file_name", "");
   if (exo_coldens_file_name.empty()) {
@@ -252,42 +253,50 @@ void TChemATM::set_exo_coldens_reader() {
     return;
   }
 
+  const auto pint = get_field_in("p_int");
+  // Exo column density fields read initialization
   const std::string exo_coldens_map_file =
       m_params.get<std::string>("aero_microphys_remap_file", "");
-  const auto pint = get_field_in("p_int");
+  const auto exo_coldens_time_interpolation_method = 
+      m_params.get<std::string>("time_interpolation_method", "yearly_periodic");
 
+  // get fields from FM.
   auto grid_exo_coldens = m_grid->clone("exo_grid", true);
   grid_exo_coldens->reset_vertical_configuration(1, AbstractGrid::VKind::Model);
   auto layout = grid_exo_coldens->get_3d_scalar_layout(LEV);
 
+  auto molec = none;
   auto cm2 = pow(m / 100, 2);
-  auto molec_cm2 = Units(none / cm2, "molecules/cm2");
-  Field field_exo(FieldIdentifier("O3_column_density", layout, molec_cm2,
-                                  grid_exo_coldens->name()));
+  auto molec_cm2 = Units(molec / cm2, "molecules/cm2");
+  const std::string exo_coldens_name = "O3_column_density";
+  Field field_exo(
+      FieldIdentifier(exo_coldens_name, layout, molec_cm2, grid_exo_coldens->name()));
   field_exo.allocate_view();
 
   m_exo_coldens_fields.clear();
   m_exo_coldens_fields.push_back(field_exo);
 
-  util::TimeStamp ref_ts_exo_coldens(1, 1, 1, 0, 0, 0);
-  m_data_interp_exo_coldens =
+  m_data_interp_exo_coldens = 
       std::make_shared<DataInterpolation>(grid_exo_coldens, m_exo_coldens_fields);
-  m_data_interp_exo_coldens->setup_periodic_time_database(
-      {exo_coldens_file_name}, ref_ts_exo_coldens);
+  m_data_interp_exo_coldens->setup_time_database(
+      {exo_coldens_file_name}, exo_coldens_time_interpolation_method);
   m_data_interp_exo_coldens->create_horiz_remappers(
-      exo_coldens_map_file == "none" ? "" : exo_coldens_map_file);
+      exo_coldens_map_file == "none" ? "" : exo_coldens_map_file, m_iop_data_manager);
   m_data_interp_exo_coldens->set_logger(m_atm_logger);
 
   DataInterpolation::VertRemapData remap_exo_coldens;
   remap_exo_coldens.vr_type = DataInterpolation::Custom;
+  // We are using a custom remapper that invokes the MAM4XX routine
+  // for vertical interpolation.
   auto grid_after_hremap = m_data_interp_exo_coldens->get_grid_after_hremap();
-  auto vertical_remapper = std::make_shared<VerticalRemapperExoColdensMAM4>(
-      grid_after_hremap, grid_exo_coldens);
+  auto vertical_remapper = 
+      std::make_shared<VerticalRemapperExoColdensMAM4>(grid_after_hremap, grid_exo_coldens);
   vertical_remapper->set_delta_pressure(exo_coldens_file_name, pint);
   remap_exo_coldens.custom_remapper = vertical_remapper;
 
   m_data_interp_exo_coldens->create_vert_remapper(remap_exo_coldens);
-  m_data_interp_exo_coldens->init_time_interpolation(start_of_step_ts(), DataInterpolation::Linear);
+  m_data_interp_exo_coldens->init_time_interpolation(
+      start_of_step_ts(), DataInterpolation::Linear);
   m_have_exo_coldens = true;
 }
 
