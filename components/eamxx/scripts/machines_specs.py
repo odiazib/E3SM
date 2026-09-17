@@ -340,6 +340,27 @@ class Compy(Machine):
         cls.batch = "srun --time 02:00:00 --nodes=1 -p short --exclusive --account e3sm"
 
 ###############################################################################
+class Flight(Machine):
+###############################################################################
+    concrete = True
+    @classmethod
+    def setup(cls):
+        super().setup_base("flight")
+        compiler = "intel"
+        cls.cxx_compiler = "mpicxx"
+        cls.c_compiler   = "mpicc"
+        cls.ftn_compiler = "mpifort"
+        cls.env_setup = ["export PROJECT=fy210162",
+                         f"eval $({CIMEROOT}/CIME/Tools/get_case_env -c SMS.ne4pg2_ne4pg2.F2010-SCREAMv1.{cls.name}_{compiler})",
+                         "export NetCDF_C_PATH=${NETCDF_C_PATH}",
+                         "export NetCDF_Fortran_PATH=/projects/sems/install/boca/acme/manual/netcdf-fortran/4.6.3",
+                         "export PnetCDF_C_PATH=${PNETCDF_PATH}",
+                         "export PnetCDF_Fortran_PATH=${PNETCDF_PATH}",
+                         "export LD_LIBRARY_PATH=/projects/sems/install/boca/acme/manual/netcdf-fortran/4.6.3/lib64:$LD_LIBRARY_PATH"]
+        cls.batch = "salloc --time 02:00:00 --nodes=1 --account fy210162"
+        cls.baselines_dir = "/projects/ccsm/ccsm_baselines/intel/scream/flight"
+
+###############################################################################
 class GHCISNLGNU(Machine):
 ###############################################################################
     concrete = True

@@ -310,12 +310,22 @@ class TestAllScream(object):
         stat, f_path, _ = run_cmd("nf-config --prefix")
         if stat == 0:
             result += f" -DNetCDF_Fortran_PATH={f_path}"
+        elif "NetCDF_Fortran_PATH" in os.environ:
+            result += f" -DNetCDF_Fortran_PATH={os.environ['NetCDF_Fortran_PATH']}"
         stat, c_path, _ = run_cmd("nc-config --prefix")
         if stat == 0:
             result += f" -DNetCDF_C_PATH={c_path}"
+        elif "NetCDF_C_PATH" in os.environ:
+            result += f" -DNetCDF_C_PATH={os.environ['NetCDF_C_PATH']}"
         stat, pc_path, _ = run_cmd("pnetcdf-config --prefix")
         if stat == 0:
             result += f" -DPnetCDF_C_PATH={pc_path}"
+        else:
+            # Fallback to environment variables
+            if "PnetCDF_C_PATH" in os.environ:
+                result += f" -DPnetCDF_C_PATH={os.environ['PnetCDF_C_PATH']}"
+            if "PnetCDF_Fortran_PATH" in os.environ:
+                result += f" -DPnetCDF_Fortran_PATH={os.environ['PnetCDF_Fortran_PATH']}"
 
         # Test-specific cmake options
         for key, value in test.cmake_args:
