@@ -125,9 +125,6 @@ if (EAMXX_TCHEM_ENABLE_SUNDIALS)
     set(ENABLE_CALIPER OFF CACHE BOOL "" FORCE)
     set(ENABLE_ADIAK OFF CACHE BOOL "" FORCE)
     
-    # Disable fused kernels (only available for CUDA/HIP)
-    set(SUNDIALS_BUILD_PACKAGE_FUSED_KERNELS OFF CACHE BOOL "" FORCE)
-    
     # Sundials source directory
     set(SUNDIALS_SOURCE_DIR "${EXTERNALS_SOURCE_DIR}/tchem-atm/external/Sundials")
     
@@ -256,14 +253,6 @@ if (EAMXX_TCHEM_ENABLE_SUNDIALS)
   endif()
   if (TARGET sundials_sunlinsolkokkosdense)
     target_link_libraries(eamxx_tchem_atm PUBLIC sundials_sunlinsolkokkosdense)
-  endif()
-  # Link KokkosKernels for batched dense headers used by Sundials Kokkos modules
-  if (TARGET Kokkos::kokkoskernels)
-    target_link_libraries(eamxx_tchem_atm PUBLIC Kokkos::kokkoskernels)
-  elseif (TARGET KokkosKernels::kokkoskernels)
-    target_link_libraries(eamxx_tchem_atm PUBLIC KokkosKernels::kokkoskernels)
-  elseif (TARGET kokkoskernels)
-    target_link_libraries(eamxx_tchem_atm PUBLIC kokkoskernels)
   endif()
 endif()
 
