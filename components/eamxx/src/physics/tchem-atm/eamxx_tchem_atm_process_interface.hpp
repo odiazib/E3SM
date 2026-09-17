@@ -194,6 +194,3 @@ class TChemATM : public AtmosphereProcess {
 }  // namespace scream
 
 #endif  // EAMXX_TCHEM_ATM_PROCESS_INTERFACE_HPP
-#if defined(TCHEM_ATM_ENABLE_SUNDIALS)
-  void cleanup_cvode();
-#endif

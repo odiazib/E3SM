@@ -71,7 +71,10 @@ int TChemATM::cvode_rhs_func(sunrealtype t, N_Vector y, N_Vector ydot, void* use
           external_sources_at_i = Kokkos::subview(external_sources, i, Kokkos::ALL());
         }
         
-        TChem::Scratch<cvode_real_type_1d_view> work(member.team_scratch(level), per_team_extent);
+        // Get scratch memory and create a view from its raw pointer
+        // This avoids the "incompatible spaces" error when passing to team_invoke
+        TChem::Scratch<cvode_real_type_1d_view> scratch(member.team_scratch(level), per_team_extent);
+        cvode_real_type_1d_view work(scratch.data(), per_team_extent);
         
         // Compute RHS using TChem's NetProductionRates
         if (kmcd.nConstSpec > 0) {
@@ -145,11 +148,12 @@ int TChemATM::cvode_jac_func(sunrealtype t, N_Vector y, N_Vector fy, SUNMatrix J
           external_sources_at_i = Kokkos::subview(external_sources, i, Kokkos::ALL());
         }
         
-        TChem::Scratch<cvode_real_type_1d_view> work(member.team_scratch(level), per_team_extent);
-        auto wptr = work.data();
+        // Get scratch memory and create views from raw pointer
+        TChem::Scratch<cvode_real_type_1d_view> scratch(member.team_scratch(level), per_team_extent);
+        auto wptr = scratch.data();
         
         const TChem::ordinal_type problem_workspace_size = problem_type::getWorkSpaceSize(kmcd);
-        auto pw = cvode_real_type_1d_view(wptr, problem_workspace_size);
+        cvode_real_type_1d_view pw(wptr, problem_workspace_size);
         wptr += problem_workspace_size;
         
         problem_type problem;
@@ -446,7 +450,7 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     m_cvode_A = std::make_unique<CVODEMatType>(m_nbatch, number_of_equations, number_of_equations, *m_sundials_ctx);
     m_cvode_LS = std::make_unique<CVODELSType>(*m_sundials_ctx);
     
-    retval = CVodeSetLinearSolver(m_cvode_mem, *m_cvode_LS, *m_cvode_A);
+    retval = CVodeSetLinearSolver(m_cvode_mem, m_cvode_LS->Convert(), m_cvode_A->Convert());
     EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeSetLinearSolver (dense) failed.\n");
     
     retval = CVodeSetJacFn(m_cvode_mem, cvode_jac_func);
