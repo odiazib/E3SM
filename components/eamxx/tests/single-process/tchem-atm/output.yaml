@@ -1,0 +1,59 @@
+%YAML 1.1
+---
+filename_prefix: tchem_atm_standalone_output
+averaging_type: instant
+max_snapshots_per_file: 20
+fields:
+  physics:
+    field_names:
+      # TChem 
+      - O3
+      - OH
+      - HO2
+      - H2O2
+      - CH2O
+      - CH3O2
+      - CH3OOH
+        #- NO
+      - NO2
+      - NO3
+      - N2O5
+      - HNO3
+      - HO2NO2
+      - PAN
+      - CO
+      - C2H6
+      - C3H8
+      - C2H4
+      - ROHO2
+      - CH3COCH3
+      - C2H5O2
+      - C2H5OOH
+      - CH3CHO
+      - CH3CO3
+      - ISOP
+      - ISOP_VBS
+      - ISOPO2
+      - C10H16
+      - MVKMACR
+      - MVKO2
+      - E90
+      - CH4LNZ
+      - DMS
+      - SO2
+      - H2SO4
+      - SOAG0
+      - SOAG15
+      - SOAG24
+      - SOAG31
+      - SOAG32
+      - SOAG33
+      - SOAG34
+      - SOAG35
+      - prsd_O3
+      - prsd_NO3
+      - prsd_OH
+output_control:
+  frequency: 1
+  frequency_units: nsteps
+...
