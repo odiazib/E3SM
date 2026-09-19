@@ -340,16 +340,22 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     EKAT_REQUIRE_MSG(false, "Error! Unknown solver_type '" + m_solver_type +
                      "'. Valid options: implicit_euler, trbdf2, explicit_euler, cvode_batch.\n");
   }
-  m_max_time_iterations    = m_params.get<int>("max_time_iterations", 100);
-  m_max_newton_iterations  = m_params.get<int>("max_newton_iterations", 100);
-  m_jacobian_interval      = m_params.get<int>("jacobian_interval", 1);
-  m_dtmin_sub              = m_params.get<double>("dtmin_sub", 1e-1);
-  m_dtmax_sub              = m_params.get<double>("dtmax_sub", -1.0);
-  m_atol_newton            = m_params.get<double>("atol_newton", 1e-10);
-  m_rtol_newton            = m_params.get<double>("rtol_newton", 1e-6);
-  m_atol_time              = m_params.get<double>("atol_time", 1e-12);
-  m_rtol_time              = m_params.get<double>("rtol_time", 1e-4);
-  m_use_shared_workspace   = m_params.get<bool>("use_shared_workspace", true);
+
+  // Read implicit_euler/trbdf2 parameters from namelist (under implicit_euler_parameters sublist)
+  if (m_params.isSublist("implicit_euler_parameters")) {
+    const auto& ie_params = m_params.sublist("implicit_euler_parameters");
+    m_max_time_iterations    = ie_params.get<int>("max_time_iterations", 100);
+    m_max_newton_iterations  = ie_params.get<int>("max_newton_iterations", 100);
+    m_jacobian_interval      = ie_params.get<int>("jacobian_interval", 1);
+    m_dtmin_sub              = ie_params.get<double>("dtmin_sub", 1e-1);
+    m_dtmax_sub              = ie_params.get<double>("dtmax_sub", -1.0);
+    m_atol_newton            = ie_params.get<double>("atol_newton", 1e-10);
+    m_rtol_newton            = ie_params.get<double>("rtol_newton", 1e-6);
+    m_atol_time              = ie_params.get<double>("atol_time", 1e-12);
+    m_rtol_time              = ie_params.get<double>("rtol_time", 1e-4);
+  }
+
+  m_use_shared_workspace = m_params.get<bool>("use_shared_workspace", true);
   m_orbital_year           = m_params.get<int>("orbital_year", -9999);
   m_orbital_eccen          = m_params.get<double>("orbital_eccentricity", -9999.0);
   m_orbital_obliq          = m_params.get<double>("orbital_obliquity", -9999.0);

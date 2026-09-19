@@ -588,6 +588,17 @@ be lost if SCREAM_HACK_XML is not enabled.
       <chem_file type="file" doc="TChem chemistry mechanism file">none</chem_file>
       <chemistry_domain type="string" valid_values="troposphere,stratosphere,all" doc="Which atmospheric levels to run chemistry on: troposphere (below tropopause), stratosphere (above tropopause), or all levels">troposphere</chemistry_domain>
       <solver_type type="string" valid_values="implicit_euler,trbdf2,explicit_euler,cvode_batch" doc="ODE solver type for atmospheric chemistry">implicit_euler</solver_type>
+      <implicit_euler_parameters>
+        <max_time_iterations type="integer" doc="Maximum number of time stepping iterations">100</max_time_iterations>
+        <max_newton_iterations type="integer" doc="Maximum Newton iterations per time step">100</max_newton_iterations>
+        <jacobian_interval type="integer" doc="How often to recompute Jacobian (1 = every iteration)">1</jacobian_interval>
+        <dtmin_sub type="real" doc="Minimum sub-timestep size [s]">1e-1</dtmin_sub>
+        <dtmax_sub type="real" doc="Maximum sub-timestep size [s] (-1 = use atmosphere dt)">-1.0</dtmax_sub>
+        <atol_newton type="real" doc="Absolute tolerance for Newton solver">1e-10</atol_newton>
+        <rtol_newton type="real" doc="Relative tolerance for Newton solver">1e-6</rtol_newton>
+        <atol_time type="real" doc="Absolute tolerance for time stepping">1e-12</atol_time>
+        <rtol_time type="real" doc="Relative tolerance for time stepping">1e-4</rtol_time>
+      </implicit_euler_parameters>
       <cvode_parameters>
         <rtol type="real" doc="CVODE relative tolerance">1e-8</rtol>
         <atol type="real" doc="CVODE absolute tolerance">1e-12</atol>
