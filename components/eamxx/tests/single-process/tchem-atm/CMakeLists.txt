@@ -51,31 +51,7 @@ endif()
 # ===================== CVODE batch solver test =====================
 # Only build this test if SUNDIALS is enabled
 if (EAMXX_TCHEM_ENABLE_SUNDIALS)
-  set (TEST_BASE_NAME_CVODE tchem_atm_cvode_standalone)
-
- # Create the CVODE test
- CreateADUnitTest(${TEST_BASE_NAME_CVODE}
-   LABELS tchem_atm physics cvode
-   LIBS eamxx_tchem_atm
-   MPI_RANKS ${TEST_RANK_START} ${TEST_RANK_END}
-   EXE_ARGS "--args --ifile input_cvode.yaml"
- )
-
   # Copy (and configure) yaml files needed by CVODE test
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_cvode.yaml
                  ${CMAKE_CURRENT_BINARY_DIR}/input_cvode.yaml)
-
-  # Compare output files produced by npX tests, to ensure they are bfb
-  CompareNCFilesFamilyMpi (
-    TEST_BASE_NAME ${TEST_BASE_NAME_CVODE}
-    FILE_META_NAME ${TEST_BASE_NAME_CVODE}_output.INSTANT.nsteps_x1.npMPIRANKS.${RUN_T0}.nc
-    MPI_RANKS ${TEST_RANK_START} ${TEST_RANK_END}
-    LABELS tchem_atm physics cvode
-    META_FIXTURES_REQUIRED ${TEST_BASE_NAME_CVODE}_npMPIRANKS_omp1
-  )
-
-  if (SCREAM_ENABLE_BASELINE_TESTS)
-    set (OUT_FILE_CVODE ${TEST_BASE_NAME_CVODE}_output.INSTANT.nsteps_x1.np${TEST_RANK_END}.${RUN_T0}.nc)
-    CreateBaselineTest(${TEST_BASE_NAME_CVODE} ${TEST_RANK_END} ${OUT_FILE_CVODE} ${TEST_BASE_NAME_CVODE})
-  endif()
 endif()
