@@ -17,6 +17,10 @@
 #if defined(TCHEM_ATM_ENABLE_SUNDIALS)
 #include "TChem_Impl_AtmosphericChemistryE3SM_Problem.hpp"
 #include "TChem_Impl_NetProductionRates.hpp"
+// Sacado FAD types for analytical Jacobian computation
+#if defined(TCHEM_ATM_ENABLE_SACADO_JACOBIAN_ATMOSPHERIC_CHEMISTRY)
+#include "Sacado.hpp"
+#endif
 #endif
 
 namespace scream {
@@ -112,72 +116,117 @@ int TChemATM::cvode_jac_func(sunrealtype t, N_Vector y, N_Vector fy, SUNMatrix J
   cvode_real_type_2d_view vals(N_VGetDeviceArrayPointer(y), nbatches, batchSize);
   auto J_data = sundials::kokkos::GetDenseMat<CVODEMatType>(J)->View();
 
-  using problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<Real, cvode_device_type>;
-
-  const TChem::ordinal_type level = 1;
-  const TChem::ordinal_type per_team_extent = problem_type::getWorkSpaceSize(kmcd) + batchSize;
   const std::string profile_name = "TChem::AtmosphericChemistryE3SM::CVODE_Jac";
 
 #if defined(TCHEM_ATM_ENABLE_GPU)
   const auto JacRL = udata->JacRL;
 #endif
 
-  Kokkos::Profiling::pushRegion(profile_name);
-  Kokkos::parallel_for(
-      profile_name, policy,
-      KOKKOS_LAMBDA(const typename cvode_policy_type::member_type& member) {
-        const TChem::ordinal_type i = member.league_rank();
-        
-        const auto vals_at_i = Kokkos::subview(vals, i, Kokkos::ALL());
-        const auto fac_at_i = Kokkos::subview(fac, i, Kokkos::ALL());
-        const auto const_tracers_at_i = Kokkos::subview(const_tracers, i, Kokkos::ALL());
-        
+  // Macro to run the Jacobian computation with the specified value_type
+  // When SACADO is enabled, value_type is a Sacado FAD type; otherwise it's Real
+#define CVODE_COMPUTE_JACOBIAN(value_type)                                         \
+  {                                                                                 \
+    using problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<value_type, cvode_device_type>; \
+    const TChem::ordinal_type level = 1;                                            \
+    const TChem::ordinal_type per_team_extent = problem_type::getWorkSpaceSize(kmcd) + batchSize; \
+                                                                                    \
+    Kokkos::Profiling::pushRegion(profile_name);                                    \
+    Kokkos::parallel_for(                                                           \
+        profile_name, policy,                                                       \
+        KOKKOS_LAMBDA(const typename cvode_policy_type::member_type& member) {      \
+          const TChem::ordinal_type i = member.league_rank();                       \
+                                                                                    \
+          const auto vals_at_i = Kokkos::subview(vals, i, Kokkos::ALL());           \
+          const auto fac_at_i = Kokkos::subview(fac, i, Kokkos::ALL());             \
+          const auto const_tracers_at_i = Kokkos::subview(const_tracers, i, Kokkos::ALL()); \
+                                                                                    \
+          TCHEM_ATM_GPU_JACOBIAN_SELECT(JacRL, J_data, i)                           \
+                                                                                    \
+          cvode_real_type_1d_view photo_rates_at_i;                                 \
+          if (photo_rates.extent(0) > 0) {                                          \
+            photo_rates_at_i = Kokkos::subview(photo_rates, i, Kokkos::ALL());      \
+          }                                                                         \
+                                                                                    \
+          cvode_real_type_1d_view external_sources_at_i;                            \
+          if (external_sources.extent(0) > 0) {                                     \
+            external_sources_at_i = Kokkos::subview(external_sources, i, Kokkos::ALL()); \
+          }                                                                         \
+                                                                                    \
+          TChem::Scratch<cvode_real_type_1d_view> scratch(member.team_scratch(level), per_team_extent); \
+          auto wptr = scratch.data();                                               \
+                                                                                    \
+          const TChem::ordinal_type problem_workspace_size = problem_type::getWorkSpaceSize(kmcd); \
+          cvode_real_type_1d_view pw(wptr, problem_workspace_size);                 \
+          wptr += problem_workspace_size;                                           \
+                                                                                    \
+          problem_type problem;                                                     \
+          problem._kmcd = kmcd;                                                     \
+          problem._fac = fac_at_i;                                                  \
+          problem._work = pw;                                                       \
+          problem._temperature = temperature(i);                                    \
+          problem._pressure = pressure(i);                                          \
+          problem._const_concentration = const_tracers_at_i;                        \
+          problem._photo_rates = photo_rates_at_i;                                  \
+          problem._external_sources = external_sources_at_i;                        \
+                                                                                    \
+          problem.computeJacobian(member, vals_at_i, jacobian_at_i);                \
+                                                                                    \
+          TCHEM_ATM_GPU_JACOBIAN_COPY(JacRL, J_data, i, batchSize)                  \
+        });                                                                         \
+    Kokkos::Profiling::popRegion();                                                 \
+  }
+
+  // Helper macros for GPU Jacobian handling
 #if defined(TCHEM_ATM_ENABLE_GPU)
-        const auto jacobian_at_i = Kokkos::subview(JacRL, i, Kokkos::ALL(), Kokkos::ALL());
-#else
-        const auto jacobian_at_i = Kokkos::subview(J_data, i, Kokkos::ALL(), Kokkos::ALL());
-#endif
-        
-        cvode_real_type_1d_view photo_rates_at_i;
-        if (photo_rates.extent(0) > 0) {
-          photo_rates_at_i = Kokkos::subview(photo_rates, i, Kokkos::ALL());
-        }
-        
-        cvode_real_type_1d_view external_sources_at_i;
-        if (external_sources.extent(0) > 0) {
-          external_sources_at_i = Kokkos::subview(external_sources, i, Kokkos::ALL());
-        }
-        
-        // Get scratch memory and create views from raw pointer
-        TChem::Scratch<cvode_real_type_1d_view> scratch(member.team_scratch(level), per_team_extent);
-        auto wptr = scratch.data();
-        
-        const TChem::ordinal_type problem_workspace_size = problem_type::getWorkSpaceSize(kmcd);
-        cvode_real_type_1d_view pw(wptr, problem_workspace_size);
-        wptr += problem_workspace_size;
-        
-        problem_type problem;
-        problem._kmcd = kmcd;
-        problem._fac = fac_at_i;
-        problem._work = pw;
-        problem._temperature = temperature(i);
-        problem._pressure = pressure(i);
-        problem._const_concentration = const_tracers_at_i;
-        problem._photo_rates = photo_rates_at_i;
-        problem._external_sources = external_sources_at_i;
-        
-        problem.computeNumericalJacobian(member, vals_at_i, jacobian_at_i);
-        
-#if defined(TCHEM_ATM_ENABLE_GPU)
-        // Copy from right-layout to left-layout for Sundials compatibility
-        for (int k = 0; k < batchSize; ++k) {
-          for (int j = 0; j < batchSize; ++j) {
-            J_data(i, k, j) = jacobian_at_i(k, j);
+  #define TCHEM_ATM_GPU_JACOBIAN_SELECT(JacRL, J_data, i) \
+          const auto jacobian_at_i = Kokkos::subview(JacRL, i, Kokkos::ALL(), Kokkos::ALL());
+  #define TCHEM_ATM_GPU_JACOBIAN_COPY(JacRL, J_data, i, batchSize) \
+          for (int k = 0; k < batchSize; ++k) { \
+            for (int j = 0; j < batchSize; ++j) { \
+              J_data(i, k, j) = jacobian_at_i(k, j); \
+            } \
           }
-        }
+#else
+  #define TCHEM_ATM_GPU_JACOBIAN_SELECT(JacRL, J_data, i) \
+          const auto jacobian_at_i = Kokkos::subview(J_data, i, Kokkos::ALL(), Kokkos::ALL());
+  #define TCHEM_ATM_GPU_JACOBIAN_COPY(JacRL, J_data, i, batchSize) /* no-op */
 #endif
-      });
-  Kokkos::Profiling::popRegion();
+
+  // Dispatch based on number of equations and Sacado flag
+#if defined(TCHEM_ATM_ENABLE_SACADO_JACOBIAN_ATMOSPHERIC_CHEMISTRY)
+  using scalar_problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<Real, cvode_device_type>;
+  const TChem::ordinal_type m = scalar_problem_type::getNumberOfEquations(kmcd) + 1;
+
+  if (m < 32) {
+    using value_type = Sacado::Fad::SLFad<Real, 32>;
+    CVODE_COMPUTE_JACOBIAN(value_type)
+  } else if (m < 64) {
+    using value_type = Sacado::Fad::SLFad<Real, 64>;
+    CVODE_COMPUTE_JACOBIAN(value_type)
+  } else if (m < 128) {
+    using value_type = Sacado::Fad::SLFad<Real, 128>;
+    CVODE_COMPUTE_JACOBIAN(value_type)
+  } else if (m < 256) {
+    using value_type = Sacado::Fad::SLFad<Real, 256>;
+    CVODE_COMPUTE_JACOBIAN(value_type)
+  } else if (m < 512) {
+    using value_type = Sacado::Fad::SLFad<Real, 512>;
+    CVODE_COMPUTE_JACOBIAN(value_type)
+  } else if (m < 1024) {
+    using value_type = Sacado::Fad::SLFad<Real, 1024>;
+    CVODE_COMPUTE_JACOBIAN(value_type)
+  } else {
+    Kokkos::abort("Error: Number of equations is bigger than size of Sacado FAD type (max 1024)");
+  }
+#else
+  // Numerical Jacobian - use Real (scalar) type
+  using value_type = Real;
+  CVODE_COMPUTE_JACOBIAN(value_type)
+#endif
+
+#undef CVODE_COMPUTE_JACOBIAN
+#undef TCHEM_ATM_GPU_JACOBIAN_SELECT
+#undef TCHEM_ATM_GPU_JACOBIAN_COPY
   
   return 0;
 }
@@ -990,8 +1039,49 @@ void TChemATM::run_impl(const double dt) {
     
     // Update policy for current sample count
     m_cvode_udata.policy = cvode_policy_type(TChem::exec_space(), m_nsamples, Kokkos::AUTO());
-    const TChem::ordinal_type cvode_per_team_extent = 
+
+#if defined(TCHEM_ATM_ENABLE_SACADO_JACOBIAN_ATMOSPHERIC_CHEMISTRY)
+    // When Sacado Jacobian is enabled, we need to allocate scratch memory
+    // sized for FAD types. The scratch size depends on the number of equations
+    // which determines which SLFad<Real, N> type will be used in the callback.
+    // We compute the workspace size using the appropriate FAD-templated problem type.
+    TChem::ordinal_type cvode_per_team_extent;
+    const TChem::ordinal_type m_for_fad = number_of_equations + 1;
+    if (m_for_fad < 32) {
+      using fad_type = Sacado::Fad::SLFad<Real, 32>;
+      using fad_problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<fad_type, cvode_device_type>;
+      cvode_per_team_extent = fad_problem_type::getWorkSpaceSize(m_kmcd) + number_of_equations;
+    } else if (m_for_fad < 64) {
+      using fad_type = Sacado::Fad::SLFad<Real, 64>;
+      using fad_problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<fad_type, cvode_device_type>;
+      cvode_per_team_extent = fad_problem_type::getWorkSpaceSize(m_kmcd) + number_of_equations;
+    } else if (m_for_fad < 128) {
+      using fad_type = Sacado::Fad::SLFad<Real, 128>;
+      using fad_problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<fad_type, cvode_device_type>;
+      cvode_per_team_extent = fad_problem_type::getWorkSpaceSize(m_kmcd) + number_of_equations;
+    } else if (m_for_fad < 256) {
+      using fad_type = Sacado::Fad::SLFad<Real, 256>;
+      using fad_problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<fad_type, cvode_device_type>;
+      cvode_per_team_extent = fad_problem_type::getWorkSpaceSize(m_kmcd) + number_of_equations;
+    } else if (m_for_fad < 512) {
+      using fad_type = Sacado::Fad::SLFad<Real, 512>;
+      using fad_problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<fad_type, cvode_device_type>;
+      cvode_per_team_extent = fad_problem_type::getWorkSpaceSize(m_kmcd) + number_of_equations;
+    } else if (m_for_fad < 1024) {
+      using fad_type = Sacado::Fad::SLFad<Real, 1024>;
+      using fad_problem_type = TChem::Impl::AtmosphericChemistryE3SM_Problem<fad_type, cvode_device_type>;
+      cvode_per_team_extent = fad_problem_type::getWorkSpaceSize(m_kmcd) + number_of_equations;
+    } else {
+      EKAT_REQUIRE_MSG(false, "Error! Number of equations (" + std::to_string(number_of_equations) +
+                       ") exceeds maximum Sacado FAD size (1024).\n");
+      cvode_per_team_extent = 0; // unreachable, but silences warning
+    }
+#else
+    // Numerical Jacobian: use scalar workspace size
+    const TChem::ordinal_type cvode_per_team_extent =
         cvode_problem_type::getWorkSpaceSize(m_kmcd) + number_of_equations;
+#endif
+
     const TChem::ordinal_type cvode_per_team_scratch =
         TChem::Scratch<cvode_real_type_1d_view>::shmem_size(cvode_per_team_extent);
    m_cvode_udata.policy.set_scratch_size(1, Kokkos::PerTeam(cvode_per_team_scratch));

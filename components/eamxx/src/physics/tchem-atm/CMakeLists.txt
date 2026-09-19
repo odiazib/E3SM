@@ -216,6 +216,9 @@ endif()
 set(TCHEM_ATM_ENABLE_TEST OFF CACHE BOOL "Disable TChem-atm tests within E3SM" FORCE)
 set(TCHEM_ATM_ENABLE_EXAMPLE OFF CACHE BOOL "Disable TChem-atm examples within E3SM" FORCE)
 set(TCHEM_ATM_ENABLE_SKYWALKER OFF CACHE BOOL "Disable TChem-atm skywalker within E3SM" FORCE)
+# Enable Sacado-based analytical Jacobian for atmospheric chemistry (UCI/gas-phase)
+option(EAMXX_TCHEM_ENABLE_SACADO_JACOBIAN "Enable Sacado analytical Jacobian for TChem-atm atmospheric chemistry" ON)
+set(TCHEM_ATM_ENABLE_SACADO_JACOBIAN_ATMOSPHERIC_CHEMISTRY ${EAMXX_TCHEM_ENABLE_SACADO_JACOBIAN} CACHE BOOL "Enable Sacado Jacobian in TChem-atm" FORCE)
 set(TCHEM_ATM_ENABLE_INSTALL OFF CACHE BOOL "Disable TChem-atm install exports within E3SM" FORCE)
 if (SCREAM_DOUBLE_PRECISION)
   set(TCHEM_ATM_ENABLE_REAL_TYPE "double" CACHE STRING "TChem-atm real type" FORCE)
@@ -233,6 +236,12 @@ target_include_directories(eamxx_tchem_atm PRIVATE ${EXTERNALS_SOURCE_DIR}/tchem
 target_link_libraries(eamxx_tchem_atm PUBLIC tchem_atm yaml-cpp mam4xx mam eamxx_physics_share csm_share scream_share)
 
 # Add Sundials support if enabled
+if (EAMXX_TCHEM_ENABLE_SACADO_JACOBIAN)
+  target_compile_definitions(eamxx_tchem_atm PUBLIC TCHEM_ATM_ENABLE_SACADO_JACOBIAN_ATMOSPHERIC_CHEMISTRY)
+  message(STATUS "TChem-atm: Sacado analytical Jacobian ENABLED for atmospheric chemistry")
+else()
+  message(STATUS "TChem-atm: Sacado analytical Jacobian DISABLED (using numerical Jacobian)")
+endif()
 if (EAMXX_TCHEM_ENABLE_SUNDIALS)
   target_compile_definitions(eamxx_tchem_atm PUBLIC TCHEM_ATM_ENABLE_SUNDIALS)
   # Also define TCHEM_ATM_ENABLE_GPU if using GPU execution space
