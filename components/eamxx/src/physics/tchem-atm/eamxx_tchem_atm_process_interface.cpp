@@ -598,6 +598,8 @@ void TChemATM::run_impl(const double dt) {
   using TPF = ekat::TeamPolicyFactory<KT::ExeSpace>;
   using PF  = scream::PhysicsFunctions<DefaultDevice>;
   const auto col_policy = TPF::get_default_team_policy(ncols, nlevs);
+  // Policy for kernels containing parallel_scan (requires power-of-2 team size on CUDA)
+  const auto scan_policy = TPF::get_thread_range_parallel_scan_team_policy(ncols, nlevs);
   const Real z_surf = 0.0;
 
   // Compute dry water vapor mass mixing ratio
@@ -621,18 +623,20 @@ void TChemATM::run_impl(const double dt) {
                        ekat::subview(qv_dry, icol), ekat::subview(dz, icol));
     });
 
-  // Compute interface geopotential heights
+  // Compute interface geopotential heights.
+  // Uses parallel_scan internally, so requires scan_policy on CUDA.
   Kokkos::parallel_for(
-    "tchem_z_int", col_policy,
+    "tchem_z_int", scan_policy,
     KOKKOS_LAMBDA(const ThreadTeam& team) {
       const int icol = team.league_rank();
       PF::calculate_z_int(team, nlevs, ekat::subview(dz, icol),
                           z_surf, ekat::subview(z_iface, icol));
     });
 
-  // Compute midpoint geopotential heights
+  // Compute midpoint geopotential heights.
+  // Uses parallel_scan internally, so requires scan_policy on CUDA.
   Kokkos::parallel_for(
-    "tchem_z_mid", col_policy,
+    "tchem_z_mid", scan_policy,
     KOKKOS_LAMBDA(const ThreadTeam& team) {
       const int icol = team.league_rank();
       PF::calculate_z_mid(team, nlevs, ekat::subview(z_iface, icol),
