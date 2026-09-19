@@ -403,11 +403,11 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   // Read CVODE-specific parameters from namelist (under cvode_parameters sublist)
   if (m_params.isSublist("cvode_parameters")) {
     auto& cvode_params = m_params.sublist("cvode_parameters");
-    m_cvode_rtol = cvode_params.get<double>("rtol", 1e-8);
-    m_cvode_atol = cvode_params.get<double>("atol", 1e-12);
-    m_cvode_max_steps = cvode_params.get<int>("max_steps", 10000);
-    m_cvode_max_step = cvode_params.get<double>("max_step", 0.0);
-    m_cvode_min_step = cvode_params.get<double>("min_step", 0.0);
+   m_cvode_rtol = cvode_params.get<double>("rtol", 1e-8);
+   m_cvode_atol = cvode_params.get<double>("atol", 1e-12);
+   m_cvode_max_steps = cvode_params.get<int>("max_steps", 10000);
+    m_cvode_max_step = cvode_params.get<double>("max_step", -1.0);
+   m_cvode_min_step = cvode_params.get<double>("min_step", 0.0);
   }
 
   // CVODE batch solver initialization
@@ -441,9 +441,12 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     
     // Set maximum number of internal steps
     retval = CVodeSetMaxNumSteps(m_cvode_mem, m_cvode_max_steps);
-    EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeSetMaxNumSteps failed.\n");
-    
-    // Set step size limits if specified (0 means use CVODE defaults)
+   EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeSetMaxNumSteps failed.\n");
+   
+    // Set step size limits if specified:
+    //   > 0: use specified value
+    //   < 0: use atmosphere dt (handled in run_impl)
+    //   = 0: use CVODE defaults (no limit)
     if (m_cvode_max_step > 0.0) {
       retval = CVodeSetMaxStep(m_cvode_mem, SUN_RCONST(m_cvode_max_step));
       EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeSetMaxStep failed.\n");
@@ -991,8 +994,14 @@ void TChemATM::run_impl(const double dt) {
         cvode_problem_type::getWorkSpaceSize(m_kmcd) + number_of_equations;
     const TChem::ordinal_type cvode_per_team_scratch =
         TChem::Scratch<cvode_real_type_1d_view>::shmem_size(cvode_per_team_extent);
-    m_cvode_udata.policy.set_scratch_size(1, Kokkos::PerTeam(cvode_per_team_scratch));
-    
+   m_cvode_udata.policy.set_scratch_size(1, Kokkos::PerTeam(cvode_per_team_scratch));
+   
+    // Set max step to atmosphere dt if m_cvode_max_step < 0
+    if (m_cvode_max_step < 0.0) {
+      int retval_step = CVodeSetMaxStep(m_cvode_mem, SUN_RCONST(dt));
+      EKAT_REQUIRE_MSG(retval_step >= 0, "Error! CVodeSetMaxStep failed.\n");
+    }
+
     // Reinitialize CVODE for this timestep (t0=0, y0 = current y)
     int retval = CVodeReInit(m_cvode_mem, SUN_RCONST(0.0), *m_cvode_y);
     EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeReInit failed.\n");

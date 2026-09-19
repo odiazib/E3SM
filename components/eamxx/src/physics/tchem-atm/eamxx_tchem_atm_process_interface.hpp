@@ -149,7 +149,7 @@ class TChemATM : public AtmosphereProcess {
   Real m_cvode_rtol = 1e-4;
   Real m_cvode_atol = 1e-12;
   int m_cvode_max_steps = 10000;
-  Real m_cvode_max_step = 0.0;  // 0 means no limit
+  Real m_cvode_max_step = -1.0;  // <0 means use dt, 0 means no limit, >0 means use specified value
   Real m_cvode_min_step = 0.0;  // 0 means no limit
   bool m_use_shared_workspace = true;
   // Temporary views for tropopause computation

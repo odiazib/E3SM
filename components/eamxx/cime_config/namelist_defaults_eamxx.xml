@@ -602,9 +602,9 @@ be lost if SCREAM_HACK_XML is not enabled.
       <cvode_parameters>
         <rtol type="real" doc="CVODE relative tolerance">1e-8</rtol>
         <atol type="real" doc="CVODE absolute tolerance">1e-12</atol>
-        <max_steps type="integer" doc="Maximum number of internal steps per call">10000</max_steps>
-        <max_step type="real" doc="Maximum step size (0 = no limit)">0.0</max_step>
-        <min_step type="real" doc="Minimum step size (0 = no limit)">0.0</min_step>
+       <max_steps type="integer" doc="Maximum number of internal steps per call">10000</max_steps>
+        <max_step type="real" doc="Maximum step size (-1 = use atmosphere dt, 0 = no limit, >0 = specified value [s])">-1.0</max_step>
+       <min_step type="real" doc="Minimum step size (0 = no limit)">0.0</min_step>
       </cvode_parameters>
       <!--Photolysis-->
       <mam4_rsf_file type="file" doc="File containing photolysis data"> ${DIN_LOC_ROOT}/atm/scream/mam4xx/photolysis/RSF_GT200nm_v3.0_c080811.nc</mam4_rsf_file>

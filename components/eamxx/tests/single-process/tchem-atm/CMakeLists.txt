@@ -53,12 +53,13 @@ endif()
 if (EAMXX_TCHEM_ENABLE_SUNDIALS)
   set (TEST_BASE_NAME_CVODE tchem_atm_cvode_standalone)
 
-  # Create the CVODE test
-  CreateADUnitTest(${TEST_BASE_NAME_CVODE}
-    LABELS tchem_atm physics cvode
-    LIBS eamxx_tchem_atm
-    MPI_RANKS ${TEST_RANK_START} ${TEST_RANK_END}
-  )
+ # Create the CVODE test
+ CreateADUnitTest(${TEST_BASE_NAME_CVODE}
+   LABELS tchem_atm physics cvode
+   LIBS eamxx_tchem_atm
+   MPI_RANKS ${TEST_RANK_START} ${TEST_RANK_END}
+   EXE_ARGS "--args --ifile input_cvode.yaml"
+ )
 
   # Copy (and configure) yaml files needed by CVODE test
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_cvode.yaml
