@@ -1,0 +1,144 @@
+%YAML 1.1
+---
+driver_options:
+  atmosphere_dag_verbosity_level: 5
+
+time_stepping:
+  time_step: ${ATM_TIME_STEP}
+  run_t0: ${RUN_T0}  # YYYY-MM-DD-XXXXX
+  number_of_steps: ${NUM_STEPS}
+
+eamxx:
+  atm_procs_list: [tchem_atm]
+  tchem_atm:
+    chem_file: ${TCHEM_ATM_CHEM_FILE}
+    solver_type: cvode_batch
+    cvode_parameters:
+      rtol: 1.0e-8
+      atol: 1.0e-12
+      max_steps: 10000
+      max_step: ${ATM_TIME_STEP}
+      min_step: 1
+    mam4_rsf_file : ${SCREAM_DATA_DIR}/mam4xx/photolysis/RSF_GT200nm_v3.0_c080811.nc
+    mam4_xs_long_file : ${SCREAM_DATA_DIR}/mam4xx/photolysis/temp_prs_GT200nm_JPL10_c130206.nc
+    mam4_exo_coldens_file_name : ${SCREAM_DATA_DIR}/mam4xx/linoz/ne2np4/exo_coldens_ne2np4_c20251206.nc
+    molecular_weights:
+      O3: 47.998200
+      OH: 17.006800
+      HO2: 33.006200
+      H2O2: 34.013600
+      CH2O: 30.025200
+      CH3O2: 47.032000
+      CH3OOH: 48.039400
+      NO: 30.006140
+      NO2: 46.005540
+      NO3: 62.004940
+      N2O5: 108.010480
+      HNO3: 63.012340
+      HO2NO2: 79.011740
+      PAN: 121.047940
+      CO: 28.010400
+      C2H6: 30.066400
+      C3H8: 44.092200
+      C2H4: 28.051600
+      ROHO2: 77.057200
+      CH3COCH3: 58.076800
+      C2H5O2: 61.057800
+      C2H5OOH: 62.065200
+      CH3CHO: 44.051000
+      CH3CO3: 75.042400
+      ISOP: 68.114200
+      ISOP_VBS: 68.114200
+      ISOPO2: 117.119800
+      C10H16: 136.228400
+      MVKMACR: 70.087800
+      MVKO2: 119.093400
+      E90: 47.998200
+      N2OLNZ: 28.013480
+      NOYLNZ: 14.006740
+      CH4LNZ: 16.040600
+      H2OLNZ: 18.014200
+      DMS: 62.132400
+      SO2: 64.064800
+      H2SO4: 98.078400
+      SOAG0: 250.445000
+      SOAG15: 250.445000
+      SOAG24: 250.445000
+      SOAG31: 250.445000
+      SOAG32: 250.445000
+      SOAG33: 250.445000
+      SOAG34: 250.445000
+      SOAG35: 250.445000
+      soa_a1: 250.445000
+      soa_a2: 250.445000
+      soa_a3: 250.445000
+
+grids_manager:
+  type: mesh_free
+  geo_data_source: IC_FILE
+  grids_names: [physics]
+  physics:
+    type: point_grid
+    number_of_global_columns:   218
+    number_of_vertical_levels:  72
+
+initial_conditions:
+  # The name of the file containing the initial conditions for this test.
+  filename: ${SCREAM_DATA_DIR}/init/${EAMxx_tests_IC_FILE_72lev}
+  topography_filename: ${TOPO_DATA_DIR}/${EAMxx_tests_TOPO_FILE}
+  O3: 1.3664485286779417e-06
+  OH: 7.04346350058084e-14
+  HO2: 2.08794466044897e-13
+  H2O2: 4.125549109853658e-12
+  CH2O: 3.396074253469218e-17
+  CH3O2: 7.053383293497063e-19
+  CH3OOH: 1.1091663561657815e-16
+  NO: 9.265941062185674e-10
+  NO2: 5.98150194967419e-10
+  NO3: 3.0850160660006965e-12
+  N2O5: 2.8991524710422542e-12
+  HNO3: 1.0820332706745629e-08
+  HO2NO2: 2.746617063391399e-13
+  PAN: 3.693857330668397e-16
+  CO: 3.2862481193980104e-13
+  C2H6: 1.790713828132549e-15
+  C3H8: 2.0325070467613737e-16
+  C2H4: 2.6934868377190233e-17
+  ROHO2: 1.367148760664001e-20
+  CH3COCH3: 6.200875225352344e-16
+  C2H5O2: 1.1589426490440359e-20
+  C2H5OOH: 2.4675813118268104e-17
+  CH3CHO: 1.0414316217588909e-17
+  CH3CO3: 1.0207621298303895e-19
+  ISOP: 3.6096506815481325e-18
+  ISOP_VBS: 2.1656259489419552e-19
+  ISOPO2: 1.7032720162179028e-20
+  C10H16: 1.1862782139783097e-14
+  MVKMACR: 4.6077190274825154e-18
+  MVKO2: 1.471369509450928e-20
+  E90: 4.973996808449432e-13
+  N2OLNZ: 3.2109382571181273e-09
+  NOYLNZ: 1.0249200080314821e-08
+  CH4LNZ: 3.3747237845026187e-07
+  H2OLNZ: 6.575054948071877e-06
+  DMS: 4.661979902999617e-37
+  SO2: 4.685481542886645e-18
+  H2SO4: 5.082360534424659e-16
+  SOAG0: 1.3571156558218566e-12
+  SOAG15: 7.421433448417015e-16
+  SOAG24: 3.1359713193038434e-19
+  SOAG31: 5.566397552646829e-25
+  SOAG32: 7.762733608407465e-24
+  SOAG33: 2.2623506423015275e-21
+  SOAG34: 7.149172453807482e-19
+  SOAG35: 2.8654942788808465e-16
+  prsd_O3: 2.563385693528147e-07
+  prsd_NO3: 1.8520090768415853e-12
+  prsd_OH: 2.8763187214033796e-12
+  soa_a1: 0.0
+  soa_a2: 0.0
+  soa_a3: 0.0
+# The parameters for I/O control
+scorpio:
+  output_yaml_files: ["output.yaml"]
+...

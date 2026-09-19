@@ -394,9 +394,15 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
         "tchem_workspace", m_nbatch, per_team_extent);
   }
 
-  // Read CVODE-specific parameters from namelist
-  m_cvode_rtol = m_params.get<double>("cvode_rtol", 1e-8);
-  m_cvode_atol = m_params.get<double>("cvode_atol", 1e-12);
+  // Read CVODE-specific parameters from namelist (under cvode_parameters sublist)
+  if (m_params.isSublist("cvode_parameters")) {
+    const auto& cvode_params = m_params.sublist("cvode_parameters");
+    m_cvode_rtol = cvode_params.get<double>("rtol", 1e-8);
+    m_cvode_atol = cvode_params.get<double>("atol", 1e-12);
+    m_cvode_max_steps = cvode_params.get<int>("max_steps", 10000);
+    m_cvode_max_step = cvode_params.get<double>("max_step", 0.0);
+    m_cvode_min_step = cvode_params.get<double>("min_step", 0.0);
+  }
 
   // CVODE batch solver initialization
 #if defined(TCHEM_ATM_ENABLE_SUNDIALS)
@@ -426,6 +432,20 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
     // Set tolerances
     retval = CVodeSVtolerances(m_cvode_mem, SUN_RCONST(m_cvode_rtol), *m_cvode_abstol);
     EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeSVtolerances failed.\n");
+    
+    // Set maximum number of internal steps
+    retval = CVodeSetMaxNumSteps(m_cvode_mem, m_cvode_max_steps);
+    EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeSetMaxNumSteps failed.\n");
+    
+    // Set step size limits if specified (0 means use CVODE defaults)
+    if (m_cvode_max_step > 0.0) {
+      retval = CVodeSetMaxStep(m_cvode_mem, SUN_RCONST(m_cvode_max_step));
+      EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeSetMaxStep failed.\n");
+    }
+    if (m_cvode_min_step > 0.0) {
+      retval = CVodeSetMinStep(m_cvode_mem, SUN_RCONST(m_cvode_min_step));
+      EKAT_REQUIRE_MSG(retval >= 0, "Error! CVodeSetMinStep failed.\n");
+    }
     
     // Allocate user data views
     m_cvode_temperature = cvode_real_type_1d_view("cvode_temperature", m_nbatch);
