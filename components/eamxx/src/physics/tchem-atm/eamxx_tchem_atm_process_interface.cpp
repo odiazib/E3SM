@@ -244,9 +244,15 @@ void TChemATM::create_requests() {
   if (m_atm_logger) m_atm_logger->debug("[TChemATM] Done loading molecular weights");
   m_tchem_ready = true;
 
-  // Read sampling configuration: sample above tropopause (true) or below (false)
-  m_run_troposphere = m_params.get<bool>("run_troposphere", true);
-  if (m_atm_logger) m_atm_logger->info("[TChemATM] run_troposphere = " + std::to_string(m_run_troposphere));
+  // Read sampling configuration for which atmospheric levels to run chemistry on.
+  // Valid values: "troposphere" (default), "stratosphere", "all".
+  m_chemistry_domain = m_params.get<std::string>("chemistry_domain", "troposphere");
+  EKAT_REQUIRE_MSG(m_chemistry_domain == "troposphere" ||
+                   m_chemistry_domain == "stratosphere" ||
+                   m_chemistry_domain == "all",
+                   "Error! Invalid 'chemistry_domain' value '" + m_chemistry_domain +
+                   "'. Valid options: 'troposphere', 'stratosphere', 'all'.\n");
+  if (m_atm_logger) m_atm_logger->info("[TChemATM] chemistry_domain = " + m_chemistry_domain);
 
   //FIXME: invariants are not tracers.
   for (int i = 0; i < m_kmd.nSpec_ - m_num_invariants; ++i) {
@@ -389,7 +395,7 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
   }
 
   // Read CVODE-specific parameters from namelist
-  m_cvode_rtol = m_params.get<double>("cvode_rtol", 1e-4);
+  m_cvode_rtol = m_params.get<double>("cvode_rtol", 1e-8);
   m_cvode_atol = m_params.get<double>("cvode_atol", 1e-12);
 
   // CVODE batch solver initialization
@@ -649,10 +655,18 @@ void TChemATM::run_impl(const double dt) {
   const int ncol = ncols;
   const int nlev = nlevs;
 
-  // When true, run chemistry in the troposphere (levels >= tropopause index);
-  // when false, run in the stratosphere (levels < tropopause index).
-  const bool above = m_run_troposphere;
-  m_nsamples = tchem::compute_nsamples(ntropopause, ncol, nlev, above);
+  // Determine which levels to run chemistry on based on chemistry_domain.
+  // "troposphere": levels >= tropopause index (below tropopause)
+  // "stratosphere": levels < tropopause index (above tropopause)
+  // "all": all levels
+  const bool run_all_levels = (m_chemistry_domain == "all");
+  const bool above = (m_chemistry_domain == "troposphere");
+  
+  if (run_all_levels) {
+    m_nsamples = ncol * nlev;
+  } else {
+    m_nsamples = tchem::compute_nsamples(ntropopause, ncol, nlev, above);
+  }
   if (m_atm_logger) m_atm_logger->info("[TChemATM] m_nsamples = " + std::to_string(m_nsamples));
 
   using policy_type = typename TChem::UseThisTeamPolicy<TChem::exec_space>::type;
@@ -673,9 +687,21 @@ void TChemATM::run_impl(const double dt) {
   }
 
   // Compute offsets and sampled indices used by state/photo packing.
-  tchem::compute_offsets(ntropopause, ncol, nlev, m_offsets, above);
-  tchem::compute_sample_indices(ntropopause, m_offsets, ncol, nlev, m_sample_icol,
-                                m_sample_ilev, above);
+  if (run_all_levels) {
+    // For "all" domain, indices are simply column-major: sample = icol * nlev + ilev
+    const auto sample_icol = m_sample_icol;
+    const auto sample_ilev = m_sample_ilev;
+    Kokkos::parallel_for(
+        "tchem_fill_all_indices", Kokkos::RangePolicy<TChem::exec_space>(0, m_nsamples),
+        KOKKOS_LAMBDA(const int isample) {
+          sample_icol(isample) = isample / nlev;
+          sample_ilev(isample) = isample % nlev;
+        });
+  } else {
+    tchem::compute_offsets(ntropopause, ncol, nlev, m_offsets, above);
+    tchem::compute_sample_indices(ntropopause, m_offsets, ncol, nlev, m_sample_icol,
+                                  m_sample_ilev, above);
+  }
 
   // Compute photo table rates if we have a photo table
  if (m_have_photo_table) {

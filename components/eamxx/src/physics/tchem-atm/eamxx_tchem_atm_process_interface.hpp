@@ -186,9 +186,10 @@ class TChemATM : public AtmosphereProcess {
   view_1d_int  m_sample_icol;
   view_1d_int  m_sample_ilev;
   int          m_nsamples = 0;
-  // When true, run chemistry in the troposphere; when false, run in the stratosphere.
-  // Controlled by the 'run_troposphere' namelist parameter (default: true).
-  bool m_run_troposphere = true;
+  // Controls which atmospheric levels to run chemistry on.
+  // Controlled by the 'chemistry_domain' namelist parameter.
+  // Valid values: "troposphere" (default), "stratosphere", "all".
+  std::string m_chemistry_domain = "troposphere";
 };
 
 }  // namespace scream
