@@ -17,8 +17,8 @@ eamxx:
       rtol: 1.0e-8
       atol: 1.0e-12
       max_steps: 10000
-      max_step: ${ATM_TIME_STEP}
-      min_step: 1
+      max_step: -1.0 
+      min_step: 1.0
     mam4_rsf_file : ${SCREAM_DATA_DIR}/mam4xx/photolysis/RSF_GT200nm_v3.0_c080811.nc
     mam4_xs_long_file : ${SCREAM_DATA_DIR}/mam4xx/photolysis/temp_prs_GT200nm_JPL10_c130206.nc
     mam4_exo_coldens_file_name : ${SCREAM_DATA_DIR}/mam4xx/linoz/ne2np4/exo_coldens_ne2np4_c20251206.nc
