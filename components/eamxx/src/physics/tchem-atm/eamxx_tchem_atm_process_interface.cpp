@@ -343,7 +343,7 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
 
   // Read implicit_euler/trbdf2 parameters from namelist (under implicit_euler_parameters sublist)
   if (m_params.isSublist("implicit_euler_parameters")) {
-    const auto& ie_params = m_params.sublist("implicit_euler_parameters");
+    auto& ie_params = m_params.sublist("implicit_euler_parameters");
     m_max_time_iterations    = ie_params.get<int>("max_time_iterations", 100);
     m_max_newton_iterations  = ie_params.get<int>("max_newton_iterations", 100);
     m_jacobian_interval      = ie_params.get<int>("jacobian_interval", 1);
@@ -402,7 +402,7 @@ void TChemATM::initialize_impl(const RunType /* run_type */) {
 
   // Read CVODE-specific parameters from namelist (under cvode_parameters sublist)
   if (m_params.isSublist("cvode_parameters")) {
-    const auto& cvode_params = m_params.sublist("cvode_parameters");
+    auto& cvode_params = m_params.sublist("cvode_parameters");
     m_cvode_rtol = cvode_params.get<double>("rtol", 1e-8);
     m_cvode_atol = cvode_params.get<double>("atol", 1e-12);
     m_cvode_max_steps = cvode_params.get<int>("max_steps", 10000);
