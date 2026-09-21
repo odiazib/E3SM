@@ -1,0 +1,33 @@
+%YAML 1.1
+---
+filename_prefix: tchem_atm_camp_standalone_output
+averaging_type: instant
+max_snapshots_per_file: 20
+fields:
+  physics:
+    field_names:
+      # Representative CB05/CBO5 gas-phase species
+      - O3
+      - "NO"
+      - "NO2"
+      - "NO3"
+      - "N2O5"
+      - CO
+      - HNO3
+      - H2O2
+      - FORM
+      - OH
+      - HO2
+      - PAN
+      - ISOP
+      - SO2
+      - TERP
+      - O
+      - O1D
+      - HONO
+      - ETH
+      - TOL
+output_control:
+  frequency: 1
+  frequency_units: nsteps
+...

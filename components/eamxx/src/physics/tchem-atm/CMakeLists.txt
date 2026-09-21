@@ -230,6 +230,7 @@ add_subdirectory(${EXTERNALS_SOURCE_DIR}/tchem-atm/src ${CMAKE_BINARY_DIR}/exter
 # Add the EAMxx TChem-atm process interface library
 add_library(eamxx_tchem_atm
   eamxx_tchem_atm_process_interface.cpp
+  eamxx_tchem_atm_process_camp_interface.cpp
   eamxx_tchem_atm_tchem_functions.cpp)
 target_compile_definitions(eamxx_tchem_atm PUBLIC EAMXX_HAS_TCHEM_ATM)
 target_include_directories(eamxx_tchem_atm PRIVATE ${EXTERNALS_SOURCE_DIR}/tchem-atm/src/core)

@@ -665,6 +665,112 @@ be lost if SCREAM_HACK_XML is not enabled.
     </tchem_atm>
 
     <!-- Radiation -->
+    <!-- TChem-ATM CAMP/CBO5 gas-phase chemistry (AerosolChemistry_Problem) -->
+    <tchem_atm_camp inherit="atm_proc_base">
+      <chem_file type="file" doc="TChem gas-phase chemistry mechanism file (YAML)">none</chem_file>
+      <aero_file type="file" doc="TChem aerosol mechanism file (YAML) — required by AerosolChemistry_Problem even for gas-only runs">none</aero_file>
+      <solver_type type="string" valid_values="tines,cvode_batch" doc="ODE solver type for gas-phase chemistry">tines</solver_type>
+      <implicit_euler_parameters>
+        <max_time_iterations type="integer" doc="Maximum number of time stepping iterations">1000</max_time_iterations>
+        <max_newton_iterations type="integer" doc="Maximum Newton iterations per time step">100</max_newton_iterations>
+        <jacobian_interval type="integer" doc="How often to recompute Jacobian (1 = every iteration)">1</jacobian_interval>
+        <dtmin_sub type="real" doc="Minimum sub-timestep size [s]">1e-4</dtmin_sub>
+        <dtmax_sub type="real" doc="Maximum sub-timestep size [s] (-1 = use atmosphere dt)">-1.0</dtmax_sub>
+        <atol_newton type="real" doc="Absolute tolerance for Newton solver">1e-10</atol_newton>
+        <rtol_newton type="real" doc="Relative tolerance for Newton solver">1e-6</rtol_newton>
+        <atol_time type="real" doc="Absolute tolerance for time stepping">1e-12</atol_time>
+        <rtol_time type="real" doc="Relative tolerance for time stepping">1e-4</rtol_time>
+      </implicit_euler_parameters>
+      <cvode_parameters>
+        <rtol type="real" doc="CVODE relative tolerance">1e-8</rtol>
+        <atol type="real" doc="CVODE absolute tolerance">1e-12</atol>
+        <max_steps type="integer" doc="Maximum number of internal steps per call">10000</max_steps>
+        <max_step type="real" doc="Maximum step size (-1 = use atmosphere dt, 0 = no limit, >0 = specified value [s])">-1.0</max_step>
+        <min_step type="real" doc="Minimum step size (0 = no limit)">0.0</min_step>
+      </cvode_parameters>
+      <molecular_weights>
+        <AACD     type="real" doc="Molecular weight of AACD (g/mol)">60.052</AACD>
+        <ALD2     type="real" doc="Molecular weight of ALD2 (g/mol)">44.053</ALD2>
+        <ALDX     type="real" doc="Molecular weight of ALDX (g/mol)">58.080</ALDX>
+        <BENZENE  type="real" doc="Molecular weight of BENZENE (g/mol)">78.112</BENZENE>
+        <BENZRO2  type="real" doc="Molecular weight of BENZRO2 (g/mol)">159.118</BENZRO2>
+        <BNZHRXN  type="real" doc="Molecular weight of BNZHRXN (g/mol)">1.0</BNZHRXN>
+        <BNZNRXN  type="real" doc="Molecular weight of BNZNRXN (g/mol)">1.0</BNZNRXN>
+        <C2O3     type="real" doc="Molecular weight of C2O3 (g/mol)">75.044</C2O3>
+        <CL       type="real" doc="Molecular weight of CL (g/mol)">35.453</CL>
+        <CL2      type="real" doc="Molecular weight of CL2 (g/mol)">70.906</CL2>
+        <CLO      type="real" doc="Molecular weight of CLO (g/mol)">51.452</CLO>
+        <CO       type="real" doc="Molecular weight of CO (g/mol)">28.010</CO>
+        <CRES     type="real" doc="Molecular weight of CRES (g/mol)">108.138</CRES>
+        <CRO      type="real" doc="Molecular weight of CRO (g/mol)">107.130</CRO>
+        <CXO3     type="real" doc="Molecular weight of CXO3 (g/mol)">89.070</CXO3>
+        <ETH      type="real" doc="Molecular weight of ETH (g/mol)">28.054</ETH>
+        <ETHA     type="real" doc="Molecular weight of ETHA (g/mol)">30.070</ETHA>
+        <ETOH     type="real" doc="Molecular weight of ETOH (g/mol)">46.069</ETOH>
+        <FACD     type="real" doc="Molecular weight of FACD (g/mol)">46.026</FACD>
+        <FMCL     type="real" doc="Molecular weight of FMCL (g/mol)">64.471</FMCL>
+        <FORM     type="real" doc="Molecular weight of FORM (g/mol)">30.026</FORM>
+        <H2O2     type="real" doc="Molecular weight of H2O2 (g/mol)">34.015</H2O2>
+        <HCL      type="real" doc="Molecular weight of HCL (g/mol)">36.461</HCL>
+        <HCO3     type="real" doc="Molecular weight of HCO3 (g/mol)">63.033</HCO3>
+        <HNO3     type="real" doc="Molecular weight of HNO3 (g/mol)">63.013</HNO3>
+        <HO2      type="real" doc="Molecular weight of HO2 (g/mol)">33.007</HO2>
+        <HOCL     type="real" doc="Molecular weight of HOCL (g/mol)">52.460</HOCL>
+        <HONO     type="real" doc="Molecular weight of HONO (g/mol)">47.013</HONO>
+        <IOLE     type="real" doc="Molecular weight of IOLE (g/mol)">56.108</IOLE>
+        <ISOP     type="real" doc="Molecular weight of ISOP (g/mol)">68.118</ISOP>
+        <ISOPRXN  type="real" doc="Molecular weight of ISOPRXN (g/mol)">1.0</ISOPRXN>
+        <ISPD     type="real" doc="Molecular weight of ISPD (g/mol)">70.091</ISPD>
+        <MEO2     type="real" doc="Molecular weight of MEO2 (g/mol)">47.034</MEO2>
+        <MEOH     type="real" doc="Molecular weight of MEOH (g/mol)">32.042</MEOH>
+        <MEPX     type="real" doc="Molecular weight of MEPX (g/mol)">48.042</MEPX>
+        <MGLY     type="real" doc="Molecular weight of MGLY (g/mol)">72.063</MGLY>
+        <N2O5     type="real" doc="Molecular weight of N2O5 (g/mol)">108.010</N2O5>
+        <NO       type="real" doc="Molecular weight of NO (g/mol)">30.006</NO>
+        <NO2      type="real" doc="Molecular weight of NO2 (g/mol)">46.006</NO2>
+        <NO3      type="real" doc="Molecular weight of NO3 (g/mol)">62.005</NO3>
+        <NTR      type="real" doc="Molecular weight of NTR (g/mol)">77.040</NTR>
+        <O        type="real" doc="Molecular weight of O (g/mol)">15.999</O>
+        <O1D      type="real" doc="Molecular weight of O1D (g/mol)">15.999</O1D>
+        <O3       type="real" doc="Molecular weight of O3 (g/mol)">47.998</O3>
+        <OH       type="real" doc="Molecular weight of OH (g/mol)">17.007</OH>
+        <OLE      type="real" doc="Molecular weight of OLE (g/mol)">42.081</OLE>
+        <OPEN     type="real" doc="Molecular weight of OPEN (g/mol)">84.074</OPEN>
+        <PACD     type="real" doc="Molecular weight of PACD (g/mol)">76.051</PACD>
+        <PAN      type="real" doc="Molecular weight of PAN (g/mol)">121.050</PAN>
+        <PANX     type="real" doc="Molecular weight of PANX (g/mol)">135.076</PANX>
+        <PAR      type="real" doc="Molecular weight of PAR (g/mol)">14.027</PAR>
+        <PNA      type="real" doc="Molecular weight of PNA (g/mol)">79.012</PNA>
+        <ROOH     type="real" doc="Molecular weight of ROOH (g/mol)">48.042</ROOH>
+        <ROR      type="real" doc="Molecular weight of ROR (g/mol)">31.034</ROR>
+        <SESQ     type="real" doc="Molecular weight of SESQ (g/mol)">204.357</SESQ>
+        <SESQRXN  type="real" doc="Molecular weight of SESQRXN (g/mol)">1.0</SESQRXN>
+        <SO2      type="real" doc="Molecular weight of SO2 (g/mol)">64.066</SO2>
+        <SULF     type="real" doc="Molecular weight of SULF (g/mol)">98.079</SULF>
+        <SULRXN   type="real" doc="Molecular weight of SULRXN (g/mol)">1.0</SULRXN>
+        <TERP     type="real" doc="Molecular weight of TERP (g/mol)">136.238</TERP>
+        <TO2      type="real" doc="Molecular weight of TO2 (g/mol)">141.124</TO2>
+        <TOL      type="real" doc="Molecular weight of TOL (g/mol)">92.138</TOL>
+        <TOLHRXN  type="real" doc="Molecular weight of TOLHRXN (g/mol)">1.0</TOLHRXN>
+        <TOLNRXN  type="real" doc="Molecular weight of TOLNRXN (g/mol)">1.0</TOLNRXN>
+        <TOLRO2   type="real" doc="Molecular weight of TOLRO2 (g/mol)">173.124</TOLRO2>
+        <TRPRXN   type="real" doc="Molecular weight of TRPRXN (g/mol)">1.0</TRPRXN>
+        <XO2      type="real" doc="Molecular weight of XO2 (g/mol)">1.0</XO2>
+        <XO2N     type="real" doc="Molecular weight of XO2N (g/mol)">1.0</XO2N>
+        <XYL      type="real" doc="Molecular weight of XYL (g/mol)">106.165</XYL>
+        <XYLHRXN  type="real" doc="Molecular weight of XYLHRXN (g/mol)">1.0</XYLHRXN>
+        <XYLNRXN  type="real" doc="Molecular weight of XYLNRXN (g/mol)">1.0</XYLNRXN>
+        <XYLRO2   type="real" doc="Molecular weight of XYLRO2 (g/mol)">187.150</XYLRO2>
+        <N2O      type="real" doc="Molecular weight of N2O (g/mol)">44.013</N2O>
+        <DUMMY    type="real" doc="Molecular weight of DUMMY (g/mol)">1.0</DUMMY>
+        <!-- SIMPOL gas-phase species from aerosol mechanism -->
+        <ISOP-P1  type="real" doc="Molecular weight of ISOP-P1 (g/mol)">88.060</ISOP-P1>
+        <ISOP-P2  type="real" doc="Molecular weight of ISOP-P2 (g/mol)">90.030</ISOP-P2>
+        <TERP-P1  type="real" doc="Molecular weight of TERP-P1 (g/mol)">170.250</TERP-P1>
+        <TERP-P2  type="real" doc="Molecular weight of TERP-P2 (g/mol)">202.162</TERP-P2>
+      </molecular_weights>
+    </tchem_atm_camp>
+
     <rrtmgp inherit="atm_proc_base">
       <rrtmgp_coefficients_file_sw type="file">${DIN_LOC_ROOT}/atm/scream/init/rrtmgp-data-sw-g112-210809.nc</rrtmgp_coefficients_file_sw>
       <rrtmgp_coefficients_file_lw type="file">${DIN_LOC_ROOT}/atm/scream/init/rrtmgp-data-lw-g128-210809.nc</rrtmgp_coefficients_file_lw>

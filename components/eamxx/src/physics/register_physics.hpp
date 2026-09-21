@@ -61,6 +61,7 @@
 #endif
 #ifdef EAMXX_HAS_TCHEM_ATM
 #include "physics/tchem-atm/eamxx_tchem_atm_process_interface.hpp"
+#include "physics/tchem-atm/eamxx_tchem_atm_process_camp_interface.hpp"
 #endif
 
 namespace scream {
@@ -123,6 +124,7 @@ inline void register_physics () {
 #endif
 #ifdef EAMXX_HAS_TCHEM_ATM
   proc_factory.register_product("tchem_atm",&create_atmosphere_process<TChemATM>);
+  proc_factory.register_product("tchem_atm_camp",&create_atmosphere_process<TChemATMCamp>);
 #endif
 
   // If no physics was enabled, silence compile warning about unused var

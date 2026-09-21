@@ -1,0 +1,208 @@
+%YAML 1.1
+---
+driver_options:
+  atmosphere_dag_verbosity_level: 5
+
+time_stepping:
+  time_step: ${ATM_TIME_STEP}
+  run_t0: ${RUN_T0}  # YYYY-MM-DD-XXXXX
+  number_of_steps: ${NUM_STEPS}
+
+eamxx:
+  atm_procs_list: [tchem_atm_camp]
+  tchem_atm_camp:
+    chem_file: ${TCHEM_ATM_CAMP_CHEM_FILE}
+    aero_file: ${TCHEM_ATM_CAMP_AERO_FILE}
+    solver_type: tines
+    implicit_euler_parameters:
+      max_time_iterations: 1000
+      max_newton_iterations: 100
+      jacobian_interval: 1
+      dtmin_sub: 1.0e-4
+      dtmax_sub: -1.0
+      atol_newton: 1.0e-10
+      rtol_newton: 1.0e-6
+      atol_time: 1.0e-12
+      rtol_time: 1.0e-4
+    molecular_weights:
+      # CB05 active gas-phase species molecular weights [g/mol].
+      # Many CB05 species are lumped surrogates; values are approximate.
+      AACD: 60.052       # acetic acid (CH3COOH)
+      ALD2: 44.053       # acetaldehyde (CH3CHO)
+      ALDX: 58.080       # propionaldehyde / higher aldehydes (~C3)
+      BENZENE: 78.112    # benzene
+      BENZRO2: 159.118   # peroxy radical from benzene
+      BNZHRXN: 1.0       # counter species (dimensionless)
+      BNZNRXN: 1.0       # counter species
+      C2O3: 75.044       # acetyl peroxy radical (CH3CO3)
+      CL: 35.453         # atomic chlorine
+      CL2: 70.906        # molecular chlorine
+      CLO: 51.452        # chlorine monoxide
+      CO: 28.010         # carbon monoxide
+      CRES: 108.138      # cresol (methylphenol)
+      CRO: 107.130       # methylphenoxy radical
+      CXO3: 89.070       # C3+ acyl peroxy radical
+      ETH: 28.054        # ethene (C2H4)
+      ETHA: 30.070       # ethane (C2H6)
+      ETOH: 46.069       # ethanol
+      FACD: 46.026       # formic acid (HCOOH)
+      FMCL: 64.471       # formyl chloride (ClCHO)
+      FORM: 30.026       # formaldehyde (HCHO)
+      H2O2: 34.015       # hydrogen peroxide
+      HCL: 36.461        # hydrochloric acid
+      HCO3: 63.033       # adduct of HO2 + FORM
+      HNO3: 63.013       # nitric acid
+      HO2: 33.007        # hydroperoxyl radical
+      HOCL: 52.460       # hypochlorous acid
+      HONO: 47.013       # nitrous acid
+      IOLE: 56.108       # internal olefin (≈2-butene C4H8)
+      ISOP: 68.118       # isoprene (C5H8)
+      ISOPRXN: 1.0       # counter species
+      ISPD: 70.091       # isoprene product (methacrolein + MVK)
+      MEO2: 47.034       # methyl peroxy radical (CH3O2)
+      MEOH: 32.042       # methanol
+      MEPX: 48.042       # methyl hydroperoxide (CH3OOH)
+      MGLY: 72.063       # methylglyoxal (CH3COCHO)
+      N2O5: 108.010      # dinitrogen pentoxide
+      NO: 30.006         # nitric oxide
+      NO2: 46.006        # nitrogen dioxide
+      NO3: 62.005        # nitrate radical
+      NTR: 77.040        # organic nitrate (lumped, ≈ CH3ONO2)
+      O: 15.999          # ground-state oxygen atom
+      O1D: 15.999        # excited oxygen atom O(1D)
+      O3: 47.998         # ozone
+      OH: 17.007         # hydroxyl radical
+      OLE: 42.081        # terminal olefin (≈propene C3H6)
+      OPEN: 84.074       # aromatic ring-opening product
+      PACD: 76.051       # peroxyacetic acid
+      PAN: 121.050       # peroxyacetyl nitrate
+      PANX: 135.076      # C3+ PAN analogue
+      PAR: 14.027        # paraffin carbon (–CH2– bond)
+      PNA: 79.012        # peroxynitric acid (HO2NO2)
+      ROOH: 48.042       # higher organic hydroperoxide (≈MEPX)
+      ROR: 31.034        # secondary organic oxy radical (≈CH3O)
+      SESQ: 204.357      # sesquiterpene (C15H24)
+      SESQRXN: 1.0       # counter species
+      SO2: 64.066        # sulfur dioxide
+      SULF: 98.079       # sulfuric acid (H2SO4)
+      SULRXN: 1.0        # counter species
+      TERP: 136.238      # monoterpene (C10H16)
+      TO2: 141.124       # toluene-hydroxyl adduct + O2
+      TOL: 92.138        # toluene
+      TOLHRXN: 1.0       # counter species
+      TOLNRXN: 1.0       # counter species
+      TOLRO2: 173.124    # peroxy radical from toluene
+      TRPRXN: 1.0        # counter species
+      XO2: 1.0           # NO-to-NO2 operator (dimensionless)
+      XO2N: 1.0          # NO-to-NTR operator (dimensionless)
+      XYL: 106.165       # xylene
+      XYLHRXN: 1.0       # counter species
+      XYLNRXN: 1.0       # counter species
+      XYLRO2: 187.150    # peroxy radical from xylene
+      N2O: 44.013        # nitrous oxide
+      DUMMY: 1.0         # inert dummy species
+      # SIMPOL gas-phase species (from aerosol mechanism)
+      ISOP-P1: 88.060    # isoprene SOA product 1
+      ISOP-P2: 90.030    # isoprene SOA product 2
+      TERP-P1: 170.250   # monoterpene SOA product 1
+      TERP-P2: 202.162   # monoterpene SOA product 2
+
+grids_manager:
+  type: mesh_free
+  geo_data_source: IC_FILE
+  grids_names: [physics]
+  physics:
+    type: point_grid
+    number_of_global_columns:   218
+    number_of_vertical_levels:  72
+
+initial_conditions:
+  # The name of the file containing the initial conditions for this test.
+  filename: ${SCREAM_DATA_DIR}/init/${EAMxx_tests_IC_FILE_72lev}
+  topography_filename: ${TOPO_DATA_DIR}/${EAMxx_tests_TOPO_FILE}
+  # CB05 active species initial conditions (wet mass mixing ratio, kg/kg).
+  # Values are small but nonzero to avoid division-by-zero issues.
+  AACD: 1.0e-15
+  ALD2: 1.0e-15
+  ALDX: 1.0e-15
+  BENZENE: 1.0e-15
+  BENZRO2: 1.0e-20
+  BNZHRXN: 1.0e-20
+  BNZNRXN: 1.0e-20
+  C2O3: 1.0e-20
+  CL: 1.0e-20
+  CL2: 1.0e-15
+  CLO: 1.0e-20
+  CO: 1.0e-10
+  CRES: 1.0e-18
+  CRO: 1.0e-20
+  CXO3: 1.0e-20
+  ETH: 1.0e-15
+  ETHA: 1.0e-16
+  ETOH: 1.0e-14
+  FACD: 1.0e-13
+  FMCL: 1.0e-20
+  FORM: 1.0e-15
+  H2O2: 1.0e-16
+  HCL: 1.0e-20
+  HCO3: 1.0e-20
+  HNO3: 1.0e-14
+  HO2: 1.0e-17
+  HOCL: 1.0e-20
+  HONO: 1.0e-15
+  IOLE: 1.0e-16
+  ISOP: 1.0e-15
+  ISOPRXN: 1.0e-20
+  ISPD: 1.0e-20
+  MEO2: 1.0e-20
+  MEOH: 1.0e-14
+  MEPX: 1.0e-20
+  MGLY: 1.0e-20
+  N2O5: 1.0e-20
+  NO: 1.0e-14
+  NO2: 1.0e-13
+  NO3: 1.0e-20
+  NTR: 1.0e-20
+  O: 1.0e-20
+  O1D: 1.0e-20
+  O3: 1.0e-07
+  OH: 1.0e-18
+  OLE: 1.0e-15
+  OPEN: 1.0e-20
+  PACD: 1.0e-20
+  PAN: 1.0e-20
+  PANX: 1.0e-20
+  PAR: 1.0e-15
+  PNA: 1.0e-20
+  ROOH: 1.0e-20
+  ROR: 1.0e-20
+  SESQ: 1.0e-17
+  SESQRXN: 1.0e-20
+  SO2: 1.0e-15
+  SULF: 1.0e-20
+  SULRXN: 1.0e-20
+  TERP: 1.0e-14
+  TO2: 1.0e-20
+  TOL: 1.0e-15
+  TOLHRXN: 1.0e-20
+  TOLNRXN: 1.0e-20
+  TOLRO2: 1.0e-20
+  TRPRXN: 1.0e-20
+  XO2: 1.0e-20
+  XO2N: 1.0e-20
+  XYL: 1.0e-15
+  XYLHRXN: 1.0e-20
+  XYLNRXN: 1.0e-20
+  XYLRO2: 1.0e-20
+  N2O: 1.0e-09
+  DUMMY: 1.0e-20
+  # SIMPOL gas-phase species
+  ISOP-P1: 1.0e-20
+  ISOP-P2: 1.0e-20
+  TERP-P1: 1.0e-20
+  TERP-P2: 1.0e-20
+
+# The parameters for I/O control
+scorpio:
+  output_yaml_files: ["output.yaml"]
+...

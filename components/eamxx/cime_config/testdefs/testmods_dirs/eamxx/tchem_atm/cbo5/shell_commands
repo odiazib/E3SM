@@ -1,0 +1,10 @@
+alias ATMCHANGE='$CIMEROOT/../components/eamxx/scripts/atmchange'
+# CBO5/CAMP has 78 active gas-phase tracers.
+./xmlchange SCREAM_CMAKE_OPTIONS="SCREAM_NP 4 SCREAM_NUM_VERTICAL_LEV 80 SCREAM_NUM_TRACERS 78"
+
+#------------------------------------------------------
+# Set up the atmosphere process list with tchem_atm_camp
+#------------------------------------------------------
+ATMCHANGE physics::atm_procs_list="mac_aero_mic,rrtmgp,tchem_atm_camp" -b
+ATMCHANGE tchem_atm_camp::chem_file='${DIN_LOC_ROOT}/atm/scream/tchem_atm/CB05CL_AE5_w_simpolSOA/config_full_gas.yaml' -b
+ATMCHANGE tchem_atm_camp::aero_file='${DIN_LOC_ROOT}/atm/scream/tchem_atm/CB05CL_AE5_w_simpolSOA/mechanism_aero.yaml' -b
