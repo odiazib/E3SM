@@ -11,7 +11,6 @@
 // CVODE batch solver support (guarded by Sundials availability)
 #if defined(TCHEM_ATM_ENABLE_SUNDIALS)
 #include "TChem_AerosolChemistry_CVODE_RHS_Jacobian.hpp"
-#include <sunlinsol/sunlinsol_spgmr.h>   // SPGMR (matrix-free) linear solver
 #endif
 
 namespace scream {

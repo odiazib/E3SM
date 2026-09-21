@@ -323,19 +323,25 @@ void TChemATMCamp::initialize_impl(const RunType /* run_type */) {
     rv = CVodeSetUserData(m_cvode_mem, &m_cvode_udata);
     EKAT_REQUIRE_MSG(rv >= 0, "Error! CVodeSetUserData failed.\n");
 
-    // Use matrix-free GMRES linear solver (solver_type=1 in the TChem
-    // AerosolChemistry_CVODE_K example).
-    m_cvode_LS =
-        std::make_unique<sundials::experimental::SUNLinearSolverView>(
-            SUNLinSol_SPGMR(*m_cvode_y, SUN_PREC_NONE, 0, *m_sundials_ctx));
-    rv = CVodeSetLinearSolver(m_cvode_mem, m_cvode_LS->Convert(), nullptr);
+    // Use Kokkos dense block diagonal matrix with explicit Jacobian
+    // (solver_type = 0 in the TChem AerosolChemistry_CVODE_K example).
+    m_cvode_A = std::make_unique<CVODEMatType>(
+        m_nbatch, n_eq, n_eq, *m_sundials_ctx);
+    m_cvode_LS = std::make_unique<CVODELSType>(*m_sundials_ctx);
+
+    rv = CVodeSetLinearSolver(m_cvode_mem, m_cvode_LS->Convert(),
+                              m_cvode_A->Convert());
     EKAT_REQUIRE_MSG(rv >= 0,
-                     "Error! CVodeSetLinearSolver (SPGMR) failed.\n");
+                     "Error! CVodeSetLinearSolver (dense) failed.\n");
+
+    rv = CVodeSetJacFn(m_cvode_mem,
+                       TChem::AerosolChemistry_CVODE_K::Jac);
+    EKAT_REQUIRE_MSG(rv >= 0,
+                     "Error! CVodeSetJacFn failed.\n");
 
     // Set up team policy for CVODE callbacks
     const TChem::ordinal_type per_team_extent =
-        TChem::Impl::Aerosol_RHS<Real, tchem_device_type>::getWorkSpaceSize(
-            m_kmcd, m_amcd);
+        problem_type::getWorkSpaceSize(m_kmcd, m_amcd) + n_eq;
     cvode_policy_type policy(TChem::exec_space(), m_nbatch,
                              Kokkos::AUTO());
     const TChem::ordinal_type per_team_scratch =
@@ -466,7 +472,7 @@ void TChemATMCamp::run_impl(const double dt) {
 #if defined(TCHEM_ATM_ENABLE_SUNDIALS)
   if (m_solver_enum == SolverType::CVODEBatch) {
     // ------------------------------------------------------------------
-    // CVODE Batch Solver Path (solver_type=1 / SPGMR from CVODE_K example)
+    // CVODE Batch Solver Path (solver_type = 0 / dense from CVODE_K example)
     // ------------------------------------------------------------------
     const ordinal_type n_eq =
         problem_type::getNumberOfTimeODEs(m_kmcd, m_amcd);
@@ -524,8 +530,7 @@ void TChemATMCamp::run_impl(const double dt) {
 
     // Update policy for current sample count
     const TChem::ordinal_type rhs_extent =
-        TChem::Impl::Aerosol_RHS<Real, tchem_device_type>::getWorkSpaceSize(
-            m_kmcd, m_amcd);
+        problem_type::getWorkSpaceSize(m_kmcd, m_amcd) + n_eq;
     cvode_policy_type policy(TChem::exec_space(), nsamples,
                              Kokkos::AUTO());
     const TChem::ordinal_type per_team_scratch =
