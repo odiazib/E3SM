@@ -5,6 +5,7 @@
 #include <ekat_parameter_list.hpp>
 #include <ekat_kokkos_types.hpp>
 #include <TChem.hpp>
+#include <TChem_AerosolChemistry_ImplicitEuler.hpp>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,10 @@ class TChemATMCamp : public AtmosphereProcess {
  public:
   using tchem_device_type =
       typename Tines::UseThisDevice<TChem::exec_space>::type;
+
+  // Type aliases for the two Tines-based solvers
+  using implicit_euler_type = TChem::AerosolChemistry_ImplicitEuler;
+  using trbdf2_type         = TChem::AerosolChemistry;
 
   // AerosolChemistry problem type (gas + aerosol, but we only use gas-phase
   // species for this CBO5 / CAMP interface).
@@ -86,7 +91,7 @@ class TChemATMCamp : public AtmosphereProcess {
   real_type_1d_view m_dt_view;
   TChem::time_advance_type_1d_view m_tadv;
 
-  // Tolerance / scaling views for Tines implicit solver
+  // Tolerance / scaling views for Tines implicit solvers
   real_type_1d_view m_tol_newton;
   real_type_2d_view m_tol_time;
   real_type_2d_view m_fac;
@@ -118,11 +123,11 @@ class TChemATMCamp : public AtmosphereProcess {
   int m_idx_CH4 = -1;
 
   // Solver selection
-  enum class SolverType { CVODEBatch, Tines };
-  SolverType  m_solver_enum = SolverType::Tines;
-  std::string m_solver_type = "tines";
+  enum class SolverType { CVODEBatch, ImplicitEuler, TRBDF2 };
+  SolverType  m_solver_enum = SolverType::TRBDF2;
+  std::string m_solver_type = "trbdf2";
 
-  // Tines solver parameters
+  // Tines solver parameters (shared by ImplicitEuler and TRBDF2)
   int  m_max_time_iterations    = 1000;
   int  m_max_newton_iterations  = 100;
   int  m_jacobian_interval      = 1;

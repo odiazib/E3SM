@@ -669,7 +669,7 @@ be lost if SCREAM_HACK_XML is not enabled.
     <tchem_atm_camp inherit="atm_proc_base">
       <chem_file type="file" doc="TChem gas-phase chemistry mechanism file (YAML)">none</chem_file>
       <aero_file type="file" doc="TChem aerosol mechanism file (YAML) — required by AerosolChemistry_Problem even for gas-only runs">none</aero_file>
-      <solver_type type="string" valid_values="tines,cvode_batch" doc="ODE solver type for gas-phase chemistry">tines</solver_type>
+      <solver_type type="string" valid_values="implicit_euler,trbdf2,cvode_batch" doc="ODE solver type for gas-phase chemistry">trbdf2</solver_type>
       <implicit_euler_parameters>
         <max_time_iterations type="integer" doc="Maximum number of time stepping iterations">1000</max_time_iterations>
         <max_newton_iterations type="integer" doc="Maximum Newton iterations per time step">100</max_newton_iterations>

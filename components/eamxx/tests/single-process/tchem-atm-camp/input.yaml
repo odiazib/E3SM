@@ -13,7 +13,7 @@ eamxx:
   tchem_atm_camp:
     chem_file: ${TCHEM_ATM_CAMP_CHEM_FILE}
     aero_file: ${TCHEM_ATM_CAMP_AERO_FILE}
-    solver_type: tines
+    solver_type: trbdf2
     implicit_euler_parameters:
       max_time_iterations: 1000
       max_newton_iterations: 100

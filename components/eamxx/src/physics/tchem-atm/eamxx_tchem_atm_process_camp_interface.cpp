@@ -185,9 +185,11 @@ void TChemATMCamp::initialize_impl(const RunType /* run_type */) {
 
   // ------- Read solver parameters from namelist -------
   m_solver_type =
-      m_params.get<std::string>("solver_type", "tines");
-  if (m_solver_type == "tines") {
-    m_solver_enum = SolverType::Tines;
+      m_params.get<std::string>("solver_type", "trbdf2");
+  if (m_solver_type == "implicit_euler") {
+    m_solver_enum = SolverType::ImplicitEuler;
+  } else if (m_solver_type == "trbdf2") {
+    m_solver_enum = SolverType::TRBDF2;
   } else if (m_solver_type == "cvode_batch") {
 #if defined(TCHEM_ATM_ENABLE_SUNDIALS)
     m_solver_enum = SolverType::CVODEBatch;
@@ -200,12 +202,12 @@ void TChemATMCamp::initialize_impl(const RunType /* run_type */) {
   } else {
     EKAT_REQUIRE_MSG(false,
                      "Error! Unknown solver_type '" + m_solver_type +
-                         "'. Valid options: tines, cvode_batch.\n");
+                         "'. Valid options: implicit_euler, trbdf2, cvode_batch.\n");
   }
   if (m_atm_logger)
     m_atm_logger->info("[TChemATMCamp] solver_type = " + m_solver_type);
 
-  // Tines implicit-euler parameters
+  // Tines solver parameters (shared by implicit_euler and trbdf2)
   if (m_params.isSublist("implicit_euler_parameters")) {
     auto& ie = m_params.sublist("implicit_euler_parameters");
     m_max_time_iterations   = ie.get<int>("max_time_iterations", 1000);
@@ -229,8 +231,9 @@ void TChemATMCamp::initialize_impl(const RunType /* run_type */) {
     m_cvode_min_step  = cv.get<double>("min_step", 0.0);
   }
 
-  // ------- Allocate tolerance views for Tines solver -------
-  if (m_solver_enum == SolverType::Tines) {
+  // ------- Allocate tolerance views for Tines solvers -------
+  if (m_solver_enum == SolverType::ImplicitEuler ||
+      m_solver_enum == SolverType::TRBDF2) {
     const TChem::ordinal_type n_eq =
         problem_type::getNumberOfTimeODEs(m_kmcd, m_amcd);
 
@@ -569,14 +572,22 @@ void TChemATMCamp::run_impl(const double dt) {
 #endif  // TCHEM_ATM_ENABLE_SUNDIALS
   {
     // ------------------------------------------------------------------
-    // Tines Implicit Solver Path (AerosolChemistry::runDeviceBatch)
+    // Tines Solver Path (ImplicitEuler or TRBDF2)
     // ------------------------------------------------------------------
     using policy_type =
         typename TChem::UseThisTeamPolicy<TChem::exec_space>::type;
 
+    // Compute workspace size based on solver type
+    ordinal_type per_team_extent = 0;
+    if (m_solver_enum == SolverType::ImplicitEuler) {
+      per_team_extent =
+          implicit_euler_type::getWorkSpaceSize(m_kmcd, m_amcd);
+    } else {
+      per_team_extent =
+          trbdf2_type::getWorkSpaceSize(m_kmcd, m_amcd);
+    }
+
     policy_type policy(TChem::exec_space(), nsamples, Kokkos::AUTO());
-    const ordinal_type per_team_extent =
-        TChem::AerosolChemistry::getWorkSpaceSize(m_kmcd, m_amcd);
     const ordinal_type per_team_scratch =
         TChem::Scratch<real_type_1d_view>::shmem_size(per_team_extent);
     policy.set_scratch_size(1, Kokkos::PerTeam(per_team_scratch));
@@ -591,10 +602,17 @@ void TChemATMCamp::run_impl(const double dt) {
     for (int iter = 0;
          iter < m_max_time_iterations && tsum <= dt * 0.9999; ++iter) {
 
-      TChem::AerosolChemistry::runDeviceBatch(
-          policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state,
-          m_num_concentration, t_view, dt_view_loc, m_state,
-          team_conf_output, m_kmcd, m_amcd);
+      if (m_solver_enum == SolverType::ImplicitEuler) {
+        implicit_euler_type::runDeviceBatch(
+            policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state,
+            m_num_concentration, t_view, dt_view_loc, m_state,
+            team_conf_output, m_kmcd, m_amcd);
+      } else {
+        trbdf2_type::runDeviceBatch(
+            policy, m_tol_newton, m_tol_time, m_fac, tadv, m_state,
+            m_num_concentration, t_view, dt_view_loc, m_state,
+            team_conf_output, m_kmcd, m_amcd);
+      }
 
       tsum = 0;
       Kokkos::parallel_reduce(
